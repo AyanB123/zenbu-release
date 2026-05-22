@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+/* Wire shadcn-style utility classes (bg-card, text-muted-foreground,
+ * border, rounded-md, …) onto the host design tokens that zenbu's
+ * `<View>` auto-injects into this iframe. Live-updates on host theme
+ * changes for free. */
+@import "@hackable-gui/view-theme/tailwind.css";
+
+/* Tell tailwind to scan Streamdown's compiled JS for the utility
+ * classes it uses internally; without this, classes like `flex`,
+ * `gap-2`, `bg-card`, etc. never make it into the emitted CSS and
+ * Streamdown's mermaid / code-block toolbars render as a stack of
+ * unstyled buttons. */
+@source "../../../node_modules/streamdown/dist/*.js";
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--background);
+  color: var(--foreground);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+    Ubuntu, Cantarell, sans-serif;
+}

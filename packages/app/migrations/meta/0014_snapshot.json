@@ -1,0 +1,70 @@
+{
+  "id": "5fbf736c-950c-440f-bc82-515af9d71498",
+  "prevId": "af65eea4-bc36-4050-a5a6-200504b3c9cb",
+  "fields": {
+    "repos": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "abc6daf49c0fb814",
+      "default": {}
+    },
+    "workspaces": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "6a48a3cc6191a3a5",
+      "default": {}
+    },
+    "scopes": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "1aec2f0800d111ee",
+      "default": {}
+    },
+    "chats": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "e274c6a653a1d416",
+      "default": {}
+    },
+    "sessions": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "42d4afceb802f179",
+      "default": {}
+    },
+    "windowStates": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "10f95e639de0eddc",
+      "default": {}
+    },
+    "terminals": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "f6cee4787dd01d49",
+      "default": {}
+    },
+    "fileTreeIndexes": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "5be79a98ec942832",
+      "default": {}
+    },
+    "models": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "389f9537591154c4",
+      "default": {}
+    },
+    "settings": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "1a9eaafcc4e84227",
+      "default": {
+        "theme": "system",
+        "chatBackground": null,
+        "vimMode": true
+      }
+    }
+  }
+}

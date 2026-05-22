@@ -1,0 +1,79 @@
+import { Service } from "@zenbujs/core/runtime"
+import {
+  DbService,
+  RendererHostService,
+  ViewRegistryService,
+  WindowService,
+} from "@zenbujs/core/services"
+import { buildContextMenuPrepend } from "../lib/context-menu-prepend"
+
+/** Single shared window that hosts the standalone chat-tab strip. We
+ * only ever spawn one of these — repeated `open()` calls append a new
+ * tab and focus the existing window instead of spawning duplicates. */
+const CHAT_WINDOW_ID = "chat-stack"
+
+/**
+ * Registers the `"chat-window"` view (aliased over the renderer's vite
+ * server so it shares tailwind / theme vars, same trick as file-tree
+ * and pi-event-log) and exposes `open()` / `closeTab()` /
+ * `activateTab()` RPCs that drive the tab strip.
+ *
+ * Tab state lives in `root.app.chatWindows[CHAT_WINDOW_ID]` so it
+ * survives reloads and is rendered straight from the DB replica with
+ * no extra round trips.
+ */
+export class ChatWindowService extends Service.create({
+  key: "chatWindow",
+  deps: {
+    viewRegistry: ViewRegistryService,
+    window: WindowService,
+    db: DbService,
+    // Order-only: `registerAlias("app", …)` needs the renderer's vite
+    // server live before we point at one of its sub-paths.
+    rendererHost: RendererHostService,
+  },
+}) {
+  evaluate() {
+    this.setup("register-view", () => {
+      this.ctx.viewRegistry.registerAlias({
+        type: "chat-window",
+        reloaderId: "app",
+        pathPrefix: "/views/chat-window",
+        meta: { kind: "view", label: "Chat" },
+      })
+      return () => {
+        void this.ctx.viewRegistry.unregister("chat-window")
+      }
+    })
+  }
+
+  /**
+   * Open (or focus) the shared chat window with `chatId` added as a
+   * tab. If the chat is already a tab, it's just made active; if not,
+   * it's appended to the right of the strip.
+   */
+  async open(args: { chatId: string }): Promise<{ windowId: string }> {
+    await this.ctx.db.client.update(root => {
+      const state = root.app.chatWindows[CHAT_WINDOW_ID] ?? {
+        tabs: [],
+        activeChatId: null,
+      }
+      if (!state.tabs.includes(args.chatId)) {
+        state.tabs.push(args.chatId)
+      }
+      state.activeChatId = args.chatId
+      root.app.chatWindows[CHAT_WINDOW_ID] = state
+    })
+
+    return this.ctx.window.openView({
+      type: "chat-window",
+      windowId: CHAT_WINDOW_ID,
+      baseWindow: {
+        width: 820,
+        height: 820,
+        trafficLightPosition: { x: 14, y: 12 },
+      },
+      contextMenu: { prepend: buildContextMenuPrepend() },
+    })
+  }
+}

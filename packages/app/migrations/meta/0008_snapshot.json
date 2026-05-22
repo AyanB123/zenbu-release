@@ -1,0 +1,58 @@
+{
+  "id": "2c43b560-61ea-4849-9939-af96d63a62ea",
+  "prevId": "4c6cd9da-7b8c-4012-a4d3-f45401b53cd1",
+  "fields": {
+    "repos": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "abc6daf49c0fb814",
+      "default": {}
+    },
+    "workspaces": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "6a48a3cc6191a3a5",
+      "default": {}
+    },
+    "scopes": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "1aec2f0800d111ee",
+      "default": {}
+    },
+    "chats": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "e274c6a653a1d416",
+      "default": {}
+    },
+    "sessions": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "d10167c32ef4beab",
+      "default": {}
+    },
+    "windowStates": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "10f95e639de0eddc",
+      "default": {}
+    },
+    "terminals": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "f6cee4787dd01d49",
+      "default": {}
+    },
+    "settings": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "1a9eaafcc4e84227",
+      "default": {
+        "theme": "system",
+        "chatBackground": null,
+        "vimMode": true
+      }
+    }
+  }
+}

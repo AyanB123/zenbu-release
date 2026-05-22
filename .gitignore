@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Zenbu workspace state
+.zenbu/
+node_modules/.zenbujs/
+
+# Local-only TS overrides
+tsconfig.local.json
+
+# Env files (keep .env.example tracked)
+.env
+.env.*
+!.env.example
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# OS junk
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editor junk
+*.swp
+*.swo
+*~
+.idea/
+*.iml
+
+
+traces

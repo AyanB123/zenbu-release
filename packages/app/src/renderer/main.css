@@ -1,0 +1,400 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@source "../../node_modules/streamdown/dist/**/*.{js,mjs,cjs}";
+
+/* Single source of truth for the shadcn-standard token → tailwind
+ * utility mapping. Plugin views import the same file so `bg-card`,
+ * `text-muted-foreground`, `rounded-md`, etc. resolve identically in
+ * the host and in every embedded plugin iframe. */
+@import "@hackable-gui/view-theme/tailwind.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Host-specific tokens that are not part of the shared shadcn set.
+ * Anything in here is per-app design; plugins don't automatically
+ * receive these (they're not in zenbu's `HOST_THEME_TOKENS`
+ * allowlist). If a future token should be available to plugins, lift
+ * it into `@hackable-gui/view-theme/tailwind.css` instead. */
+@theme inline {
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-tab-active: var(--tab-active);
+
+  /* A foreground color that sits just one step above the sidebar /
+   * tab-strip background. Use for elements that should read as
+   * "present but inert" — e.g. disabled icon-only buttons on the
+   * tab strip — without applying alpha to `currentColor` (which
+   * would cause overlapping strokes in line-art icons to stack and
+   * produce visible seams). Always fully opaque. */
+  --color-foreground-disabled: var(--foreground-disabled);
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+    "Segoe UI", system-ui, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+}
+
+:root {
+  --radius: 0.5rem;
+
+  --background: #f4f4f4;
+  --foreground: #171717;
+
+  --card: #ffffff;
+  --card-foreground: #171717;
+
+  --popover: #ffffff;
+  --popover-foreground: #171717;
+
+  --primary: #171717;
+  --primary-foreground: #fafafa;
+
+  --secondary: #f5f5f5;
+  --secondary-foreground: #171717;
+
+  --muted: #e0e0e0;
+  --muted-foreground: #737373;
+
+  --accent: #ececec;
+  --accent-foreground: #171717;
+
+  --destructive: #dc2626;
+  --destructive-foreground: #fafafa;
+
+  --border: rgba(0, 0, 0, 0.08);
+  --input: #d4d4d4;
+  --ring: rgba(0, 0, 0, 0.2);
+
+  --sidebar: #ebebeb;
+  --sidebar-foreground: #171717;
+  --sidebar-accent: #cccccc;
+  --sidebar-accent-foreground: #171717;
+  --sidebar-border: rgba(0, 0, 0, 0.08);
+  --sidebar-ring: rgba(0, 0, 0, 0.2);
+
+  /* Active tab merges with the chat pane below — the pane uses
+     `bg-background`, so the active tab background must follow. */
+  --tab-active: var(--background);
+
+  /* One "step" above `--sidebar` (the tab strip bg) toward
+   * `--foreground`. Visually nearly merged with the strip; used as a
+   * disabled icon color so the icon is perceptible but clearly inert.
+   * Computed via `color-mix` so it tracks every theme automatically. */
+  --foreground-disabled: color-mix(in oklab, var(--foreground) 22%, var(--sidebar));
+}
+
+.dark {
+  --background: #1a1a1a;
+  --foreground: #ededed;
+
+  --card: #1f1f1f;
+  --card-foreground: #ededed;
+
+  --popover: #1c1c1c;
+  --popover-foreground: #ededed;
+
+  --primary: #fafafa;
+  --primary-foreground: #0e0e0e;
+
+  --secondary: #232323;
+  --secondary-foreground: #ededed;
+
+  --muted: #1c1c1c;
+  --muted-foreground: #a3a3a3;
+
+  --accent: #2a2a2a;
+  --accent-foreground: #fafafa;
+
+  --destructive: #ef4444;
+  --destructive-foreground: #fafafa;
+
+  --border: rgba(255, 255, 255, 0.08);
+  --input: #3a3a3a;
+  --ring: rgba(255, 255, 255, 0.2);
+
+  --sidebar: #161616;
+  --sidebar-foreground: #ededed;
+  --sidebar-accent: #3a3a3a;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: rgba(255, 255, 255, 0.2);
+
+  --tab-active: var(--background);
+
+  --foreground-disabled: color-mix(in oklab, var(--foreground) 22%, var(--sidebar));
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    border-color: var(--border);
+  }
+
+  html,
+  body,
+  #root {
+    margin: 0;
+    height: 100%;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    font-size: 14px;
+  }
+
+  button,
+  input,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  button {
+    background: transparent;
+    border: none;
+    padding: 0;
+  }
+
+  button:disabled {
+    opacity: 0.5;
+  }
+
+  textarea {
+    resize: none;
+  }
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+/* OLED: layered on top of .dark — pushes surfaces to pure black
+ * while keeping every existing dark:* Tailwind utility working. */
+.oled {
+  --background: #000000;
+  --foreground: #ededed;
+
+  --card: #050505;
+  --card-foreground: #ededed;
+
+  --popover: #050505;
+  --popover-foreground: #ededed;
+
+  --secondary: #0a0a0a;
+  --muted: #0a0a0a;
+  --muted-foreground: #a3a3a3;
+  --accent: #141414;
+  --accent-foreground: #fafafa;
+
+  --border: rgba(255, 255, 255, 0.1);
+  --input: #1f1f1f;
+  --ring: rgba(255, 255, 255, 0.22);
+
+  --sidebar: #000000;
+  --sidebar-foreground: #ededed;
+  --sidebar-accent: #262626;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: rgba(255, 255, 255, 0.1);
+  --sidebar-ring: rgba(255, 255, 255, 0.22);
+
+  --tab-active: var(--background);
+
+  /* OLED's sidebar is pure black, so mixing the foreground against
+   * it at 22% (the dark-mode value) lands around #343434 — too
+   * dark to read on top of the same black surface, and the tab
+   * strip's disabled history arrows ended up invisible. Bump the
+   * foreground share until the strokes are clearly visible while
+   * still reading as "inert". */
+  --foreground-disabled: color-mix(in oklab, var(--foreground) 50%, var(--sidebar));
+}
+
+/* Allotment's split-view container sets `overflow: hidden`, which
+ * still permits programmatic + focus-induced scrolling in Chromium.
+ * The sash element on a collapsed bottom/right pane sits at
+ * `top: containerH - 4` with `height: 8px`, so `scrollHeight` exceeds
+ * `clientHeight` by 4px. When focus moves into a descendant iframe
+ * (the chat composer or a view), the browser scrolls the splitView
+ * by those 4px to maximise the focused element's visibility, which
+ * pulls every sibling pane up 4px and clips the chat pane's top
+ * border behind the title bar. `overflow: clip` clips identically
+ * but is *not* a scroll container, so the browser can't shift it.
+ * This shows up as "the top border flashes in for one frame, then
+ * vanishes" on reload, because the focus shift happens just after
+ * the first paint. */
+[class*="splitView"] {
+  overflow: clip;
+}
+
+/* Allotment renders its inter-pane separator as a `::before` on each
+ * non-first pane with `z-index: 5`. Some pane contents (e.g. the
+ * chat pane's `relative z-10` content layer) stack above that, so
+ * the separator gets covered. Lift it above app content z-stacking
+ * so the border is always continuous.
+ *
+ * We also force `background-color` here so the sash color matches the
+ * rest of the app's borders (`var(--border)`). Allotment's own
+ * `:root { --separator-border: rgba(128,128,128,0.35) }` can win over
+ * our `:root` override depending on Vite's final CSS import order, so
+ * setting it on the pseudo-element directly is the reliable hook. */
+[class*="splitView"][class*="separatorBorder"]
+  [class*="splitViewView"]:not(:first-child)::before {
+  z-index: 50;
+  background-color: var(--border);
+}
+
+/* When a pane is collapsed (allotment removes `split-view-view-visible`),
+ * its separator pseudo-element still renders as a stray 1px line at the
+ * edge of the container. Hide it so closed panes don't show ghost
+ * borders. */
+[class*="splitView"][class*="separatorBorder"]
+  [class*="splitViewView"]:not(.split-view-view-visible)::before {
+  background-color: transparent;
+}
+
+@keyframes hg-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes hg-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes hg-pulse {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.hg-row {
+  --hg-row-bg: transparent;
+}
+
+/* Chat tab background, mirrors the .hg-row pattern. Exposes
+   --hg-tab-bg so hover-only affordances (e.g. the close button) can
+   render a gradient fade that matches the tab's current background.
+
+   Zed-style tab strip: inactive tabs blend with the surrounding
+   strip (`var(--sidebar)`); the active tab pops forward in
+   `var(--tab-active)`. Each inactive tab draws its own 1px bottom
+   rule via an inset shadow, suppressed on the active tab so it
+   visually merges with the pane below. */
+.hg-tab {
+  --hg-tab-bg: var(--sidebar);
+  background: var(--hg-tab-bg);
+  box-shadow: inset 0 -1px 0 0 var(--border);
+}
+.hg-tab:hover {
+  --hg-tab-bg: color-mix(in oklch, var(--foreground) 4%, var(--sidebar));
+}
+.hg-tab.is-active {
+  --hg-tab-bg: var(--tab-active);
+  box-shadow: none;
+}
+/* Strip-edge buttons (back/forward, +, split) sit in the same
+   sidebar-colored gutter as inactive tabs, and need the same
+   bottom rule so the line under the tab strip stays continuous. */
+.hg-tab-strip-button {
+  box-shadow: inset 0 -1px 0 0 var(--border);
+}
+/* Opt out of the global `button:disabled { opacity: 0.5 }` rule.
+   That rule fades the whole element — including the inset
+   box-shadow that draws the strip's bottom border — which makes the
+   1px line under disabled history arrows look lighter than the
+   same border under enabled tabs/buttons. We get the "disabled"
+   read entirely from the icon's `text-foreground-disabled` color
+   (see the comment in chat-tabs.tsx), so the wrapper button stays
+   fully opaque and the bottom rule renders identically in every
+   state. */
+.hg-tab-strip-button:disabled {
+  opacity: 1;
+}
+.hg-row:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  --hg-row-bg: var(--accent);
+}
+.hg-row.is-active {
+  background: var(--sidebar-accent);
+  color: var(--sidebar-accent-foreground);
+  --hg-row-bg: var(--sidebar-accent);
+}
+.hg-row.is-active:hover {
+  --hg-row-bg: var(--sidebar-accent);
+}
+.hg-icon:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.hg-header:hover {
+  background: var(--accent);
+}
+.hg-header.is-active {
+  background: var(--sidebar-accent);
+  color: var(--sidebar-accent-foreground);
+}
+
+.hg-shimmer {
+  background-size: 200% 100%;
+  animation: hg-shimmer 1.4s linear infinite;
+}
+
+.text-shimmer {
+  background-image: linear-gradient(
+    to right,
+    var(--muted-foreground) 0%,
+    var(--foreground) 50%,
+    var(--muted-foreground) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: hg-shimmer 1.6s linear infinite;
+}
+
+/* Placeholder bar that shimmers while waiting for content (e.g. a chat title being generated). */
+.shimmer-bar {
+  background-image: linear-gradient(
+    to right,
+    var(--muted) 0%,
+    var(--accent) 50%,
+    var(--muted) 100%
+  );
+  background-size: 200% 100%;
+  animation: hg-shimmer 1.6s linear infinite;
+}
+
+@keyframes hg-spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.animate-spin-slow {
+  animation: hg-spin-slow 1.2s linear infinite;
+}

@@ -1,0 +1,69 @@
+{
+  "id": "760fecbb-b9a7-4e79-b032-557591a423b8",
+  "prevId": "94b6324e-5591-49dd-867f-617dda290199",
+  "fields": {
+    "repos": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "abc6daf49c0fb814",
+      "default": {}
+    },
+    "workspaces": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "6e68869e636c2632",
+      "default": {}
+    },
+    "workspaceStates": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "88d7262891908123",
+      "default": {}
+    },
+    "workspaceItems": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "73fa7b264be0bd37",
+      "default": {}
+    },
+    "workspaceItemStates": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "8e4305841293d2a7",
+      "default": {}
+    },
+    "chats": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "bbc78e9e72e6e317",
+      "default": {}
+    },
+    "chatStates": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "d5bb7fb892fba9ff",
+      "default": {}
+    },
+    "sessions": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "cacdc7d8e35e5f44",
+      "default": {}
+    },
+    "windowStates": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "ab5cc63f28db09c1",
+      "default": {}
+    },
+    "settings": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "6c58a9643de640f0",
+      "default": {
+        "theme": "system",
+        "chatBackground": null
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "id": "e94b1ccf-a6d4-43fd-a7f1-2d7e8036fb36",
+  "prevId": "99dd304b-0561-433c-976a-c32a0487238b",
+  "fields": {
+    "repos": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "abc6daf49c0fb814",
+      "default": {}
+    },
+    "workspaces": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "6a48a3cc6191a3a5",
+      "default": {}
+    },
+    "scopes": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "1aec2f0800d111ee",
+      "default": {}
+    },
+    "chats": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "e274c6a653a1d416",
+      "default": {}
+    },
+    "sessions": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "d10167c32ef4beab",
+      "default": {}
+    },
+    "windowStates": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "b649f06679a080ca",
+      "default": {}
+    },
+    "settings": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "6c58a9643de640f0",
+      "default": {
+        "theme": "system",
+        "chatBackground": null
+      }
+    }
+  }
+}

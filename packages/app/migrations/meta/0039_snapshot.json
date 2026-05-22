@@ -1,0 +1,98 @@
+{
+  "id": "2895963c-763d-496f-8e7d-1ceaa1461240",
+  "prevId": "d539325c-e6b5-4949-90e5-5e498c1fcf81",
+  "fields": {
+    "repos": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "abc6daf49c0fb814",
+      "default": {}
+    },
+    "workspaces": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "7b1aafbcbf2ad5c4",
+      "default": {}
+    },
+    "scopes": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "e53bf45a08ff9104",
+      "default": {}
+    },
+    "chats": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "e274c6a653a1d416",
+      "default": {}
+    },
+    "sessions": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "883fd169a98c801a",
+      "default": {}
+    },
+    "windowStates": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "ffd58cee6dfa96d5",
+      "default": {}
+    },
+    "chatStates": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "1435d8954a9470c5",
+      "default": {}
+    },
+    "terminals": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "f6cee4787dd01d49",
+      "default": {}
+    },
+    "fileTreeIndexes": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "5be79a98ec942832",
+      "default": {}
+    },
+    "models": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "389f9537591154c4",
+      "default": {}
+    },
+    "sessionMeta": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "52998134722c6aa1",
+      "default": {}
+    },
+    "chatWindows": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "f95e82b83f93bd6a",
+      "default": {}
+    },
+    "env": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "5aa7b30ea8cde207",
+      "default": {
+        "homeDir": null
+      }
+    },
+    "settings": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "1fd645ea78aaccda",
+      "default": {
+        "theme": "system",
+        "chatBackground": null,
+        "vimMode": true,
+        "sidebarChatSort": "created",
+        "defaultSendMode": "followUp"
+      }
+    }
+  }
+}

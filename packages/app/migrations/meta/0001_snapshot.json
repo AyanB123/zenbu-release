@@ -1,0 +1,33 @@
+{
+  "id": "94b6324e-5591-49dd-867f-617dda290199",
+  "prevId": "efc2bcaf-8a45-494b-b807-d529cdb93873",
+  "fields": {
+    "projects": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "44c30618e3ae971e",
+      "default": {}
+    },
+    "sessions": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "b3c451cc405d78e0",
+      "default": {}
+    },
+    "windowStates": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "f6d63f209f367bef",
+      "default": {}
+    },
+    "settings": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "6c58a9643de640f0",
+      "default": {
+        "theme": "system",
+        "chatBackground": null
+      }
+    }
+  }
+}

@@ -1,0 +1,69 @@
+/*
+ * @hackable-gui/view-theme/tailwind.css
+ *
+ * Tailwind v4 `@theme inline` mapping that wires shadcn-style utility
+ * classes onto the host design tokens that zenbu auto-injects into
+ * every plugin view (see `<View>` in `@zenbujs/core/react` \u2014 it stamps
+ * the host's `:root` tokens onto the iframe URL as `?theme=\u2026` and
+ * lives-updates them via postMessage).
+ *
+ * Usage \u2014 plugin view stylesheet:
+ *
+ *     @import "tailwindcss";
+ *     @import "@hackable-gui/view-theme/tailwind.css";
+ *
+ * Usage \u2014 host app stylesheet (single source of truth for the
+ * shadcn-standard mapping; add host-specific tokens in your own
+ * `@theme inline` block after this import):
+ *
+ *     @import "tailwindcss";
+ *     @import "@hackable-gui/view-theme/tailwind.css";
+ *     @theme inline {
+ *       --color-sidebar: var(--sidebar);
+ *       \u2026app-specific extras\u2026
+ *     }
+ *
+ * Why `@theme inline`? It bakes `var(--card)` directly into the
+ * emitted utility classes (`.bg-card { background: var(--card) }`)
+ * instead of going through an intermediate `--color-card` indirection.
+ * Slightly cleaner output, and matches the existing host pattern.
+ *
+ * Plugins that don't use Tailwind can ignore this file and reference
+ * the bare `var(--background)` / `var(--card)` / etc. directly \u2014
+ * zenbu injects those vars synchronously before first paint.
+ */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
