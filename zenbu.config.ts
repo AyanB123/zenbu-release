@@ -6,9 +6,16 @@ import {
 } from "@zenbujs/core/config";
 
 /**
- * Strips dev-only fields from the staged `package.json` so the mirror
- * the launcher clones doesn't ship a broken `pnpm.overrides` link or
- * 200MB of build-time electron tooling.
+ * Strips dev-only **scripts** from the staged `package.json`. The heavy
+ * lifting (removing `pnpm.overrides` + `@zenbu/act`) happens earlier in
+ * `scripts/release.sh`, *before* `pnpm install`, so the regenerated
+ * lockfile stays consistent with what we ship.
+ *
+ * This plugin only handles cosmetic cleanup: dropping scripts that
+ * reference files we don't ship (`scripts/release.sh`, `scripts/sync.sh`,
+ * `scripts/dev-link.mjs`). It also acts as a belt-and-suspenders for
+ * `pnpm.overrides` in case `build:source` is run directly without going
+ * through `release.sh`.
  */
 const trimPackageJson: BuildPlugin = {
   name: "trim-package-json",
@@ -16,29 +23,15 @@ const trimPackageJson: BuildPlugin = {
     if (file.path !== "package.json") return;
     const pkg = JSON.parse(file.contents);
 
-    // Drop the local `@zenbujs/core` link — fatal for users.
     if (pkg.pnpm?.overrides) {
       delete pkg.pnpm.overrides;
       if (Object.keys(pkg.pnpm).length === 0) delete pkg.pnpm;
     }
 
-    if (pkg.devDependencies) {
-      // The .app bundles its own Electron runtime. `electron-builder` is
-      // only needed when rebuilding the .app, not at user runtime.
-      delete pkg.devDependencies.electron;
-      delete pkg.devDependencies["electron-builder"];
-      // `@zenbu/act` is a workspace package we intentionally don't ship.
-      delete pkg.devDependencies["@zenbu/act"];
-    }
-
     if (pkg.scripts) {
-      // Dev-only scripts that reference local paths, `@zenbu/act`, or
-      // `scripts/release.sh` (the release wrapper isn't shipped).
       delete pkg.scripts["dev:link"];
       delete pkg.scripts["dev:unlink"];
-      delete pkg.scripts["sync"];
-      delete pkg.scripts.act;
-      delete pkg.scripts["ci:act"];
+      delete pkg.scripts.sync;
       delete pkg.scripts.release;
       delete pkg.scripts["release:source"];
       delete pkg.scripts["release:electron"];

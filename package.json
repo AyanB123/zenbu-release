@@ -1,6 +1,6 @@
 {
   "name": "hackable-gui",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "type": "module",
   "main": "node_modules/@zenbujs/core/dist/setup-gate.mjs",
@@ -22,6 +22,8 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "electron": "^42.0.0",
+    "electron-builder": "^26.0.0",
     "eslint": "^10.4.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "typescript": "^6.0.3",

@@ -15,9 +15,6 @@ importers:
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.19
-      '@zenbu/act':
-        specifier: workspace:*
-        version: link:packages/act
       electron:
         specifier: ^42.0.0
         version: 42.0.1
