@@ -140,19 +140,30 @@ function FileToolWrapper({
   props: ToolCallShape;
 }) {
   const rpc = useRpc();
-  const scopes = useDb(root =>
-    Object.values(root.app.scopes).map(s => ({
-      id: s.id,
-      directory: s.directory,
-    })),
+  // IMPORTANT: select stable references out of the replica.
+  // Returning a fresh array/object from a `useDb` selector causes
+  // useSyncExternalStore to see a new snapshot every render, which
+  // triggers an infinite re-render loop. Derive arrays inside
+  // `useMemo` instead.
+  const scopesById = useDb(root => root.app.scopes);
+  const windowStates = useDb(root => root.app.windowStates);
+
+  const scopes = useMemo(
+    () =>
+      Object.values(scopesById).map(s => ({
+        id: s.id,
+        directory: s.directory,
+      })),
+    [scopesById],
   );
-  const activeScopeDirectory = useDb(root => {
-    const states = Object.values(root.app.windowStates);
+
+  const activeScopeDirectory = useMemo(() => {
+    const states = Object.values(windowStates);
     const scopeId =
       states.find(s => s.selectedScopeId != null)?.selectedScopeId ?? null;
     if (!scopeId) return null;
-    return root.app.scopes[scopeId]?.directory ?? null;
-  });
+    return scopesById[scopeId]?.directory ?? null;
+  }, [windowStates, scopesById]);
 
   const target = useMemo(() => {
     const filePath = readToolFilePath(props.rawInput);

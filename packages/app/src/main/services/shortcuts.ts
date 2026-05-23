@@ -53,6 +53,13 @@ export class ShortcutsService extends Service.create({
             })
           }
           if (matchesToggleTerminal(input)) {
+            // Every other shortcut in this file calls
+            // `event.preventDefault()`. Without it, the keydown
+            // propagates into whichever WebContents currently has
+            // focus — and once the bottom panel opens and we move
+            // focus into the terminal iframe, xterm writes the
+            // literal "j" into the pty.
+            event.preventDefault()
             this.ctx.rpc.emit.app.toggleTerminal({
               source: contents.getURL(),
             })

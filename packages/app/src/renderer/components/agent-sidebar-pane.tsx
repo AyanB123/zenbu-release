@@ -12,6 +12,7 @@ import { useDb, useDbClient, useEvents, useRpc } from "@zenbujs/core/react"
 import { TitleBar } from "./layout/title-bar"
 import { TitleBarWorkspace } from "./layout/title-bar-workspace"
 import { CommitButton } from "./title-bar/commit-button"
+import { PlayButton } from "./title-bar/play-button"
 import { WorkspaceRail, type WorkspaceRailEntry } from "./layout/workspace-rail"
 import { Sidebar } from "./layout/sidebar"
 import { SidebarHeaderRow } from "./layout/sidebar-header-row"
@@ -21,12 +22,14 @@ import { ChatTreeRow } from "./layout/chat-tree-row"
 import { WorktreeGroupRow } from "./layout/worktree-group-row"
 import { BranchSummaryDialog } from "./chat/branch-summary-dialog"
 import { CreateWorktreeDialog } from "./dialogs/create-worktree-dialog"
+import { CreatePluginDialog } from "./dialogs/create-plugin-dialog"
 import { SidebarToggle } from "./title-bar/sidebar-toggle"
 import { UtilityIconButton } from "./title-bar/utility-icon-button"
 import { ChatsHost } from "./layout/chats-host"
 import { LeftSidebarTabBar } from "./layout/left-sidebar-tab-bar"
 import { AgentSidebarFooter } from "./agent-sidebar-footer"
 import { PiSessionsTreeSidebar } from "./layout/pi-sessions-tree-sidebar"
+import { ExtraDirsSidebar } from "./layout/extra-dirs-sidebar"
 import { BottomPanelBody } from "./bottom-panel/bottom-panel-body"
 import { RightSidebarBody } from "./sidebar-views/right-sidebar"
 import { RightSidebarToggle } from "./title-bar/right-sidebar-toggle"
@@ -43,6 +46,7 @@ import {
   openChatInNewPaneInRoot,
   openChatInNewTabInRoot,
   openViewBySourceInRoot,
+  openViewBySourceInWorkspaceInRoot,
   openViewInRoot,
   selectChatInRoot,
   splitPaneNewChatInRoot,
@@ -64,21 +68,25 @@ import {
   useSetLeftSidebarOpen,
   useWorkspaceRailOpen,
   useSetWorkspaceRailOpen,
+  useActiveView,
+  useShowOnboardingView,
   useRightSidebarOpenType,
   useRightSidebarLastType,
   useSetRightSidebarOpenType,
   useBottomPanelOpen,
   useSetBottomPanelOpen,
+  useWorkspaceLayout,
+  useSetWorkspaceLayout,
   type SplitPaneResult,
 } from "@/lib/window-state"
 import { useImportWorktrees } from "../hooks/use-import-worktrees"
 import type { Schema } from "../../main/schema"
 import { useSummary } from "../hooks/use-summary"
-import { useCreateWorkspaceFromDirectory } from "../hooks/use-create-workspace"
 import { useCreateWorktreeDialog } from "../hooks/use-create-worktree-dialog"
 import { EmptyWorkspaceScreen } from "./empty-workspace-screen"
 import { ErrorBoundary } from "./common/error-boundary"
 import { requestFocusComposer } from "@/lib/focus-composer"
+import { cn } from "@/lib/utils"
 
 type Chat = Schema["chats"][string]
 type Session = Schema["sessions"][string]
@@ -128,7 +136,21 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
   const setSidebarOpen = useSetLeftSidebarOpen()
   const workspaceRailOpen = useWorkspaceRailOpen()
   const setWorkspaceRailOpen = useSetWorkspaceRailOpen()
-  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH)
+  const activeView = useActiveView()
+  const showOnboardingView = useShowOnboardingView()
+  // Per-workspace sash positions, read straight from the db. The
+  // hook is scoped by the active workspace id (and the window id),
+  // so switching workspaces in the rail flips `workspaceLayout` to
+  // the new entry on the next render. `null` fields mean "never
+  // saved" — we fall back to the constants below.
+  //
+  // Writes happen on `onDragEnd` (one row per drag, not per frame)
+  // because `onChange` would also fire for our own imperative
+  // `resize(...)` calls during a workspace switch — see the long
+  // comment on the workspace-switch effect below.
+  const workspaceLayout = useWorkspaceLayout()
+  const setWorkspaceLayout = useSetWorkspaceLayout()
+  const sidebarWidth = workspaceLayout.sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH
   const sidebarViews = useSidebarViews()
   const bottomPanelViews = useBottomPanelViews()
   const persistedBottomPanelView = useBottomPanelView()
@@ -145,9 +167,8 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
     }
     return bottomPanelViews[0]?.type ?? null
   }, [bottomPanelViews, persistedBottomPanelView])
-  const [rightSidebarWidth, setRightSidebarWidth] = useState(
-    DEFAULT_RIGHT_SIDEBAR_WIDTH,
-  )
+  const rightSidebarWidth =
+    workspaceLayout.rightSidebarWidth ?? DEFAULT_RIGHT_SIDEBAR_WIDTH
   const rightOpenType = useRightSidebarOpenType()
   // Remember the last view the user picked, so closing+reopening the
   // sidebar via the title-bar toggle restores it instead of always
@@ -192,15 +213,60 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
 
   const terminalOpen = useBottomPanelOpen()
   const setTerminalOpen = useSetBottomPanelOpen()
-  const [terminalHeight, setTerminalHeight] = useState(DEFAULT_TERMINAL_HEIGHT)
+  const terminalHeight =
+    workspaceLayout.terminalHeight ?? DEFAULT_TERMINAL_HEIGHT
   const {
     open: createWorktreeOpen,
     setOpen: setCreateWorktreeOpen,
     sourceRef: createWorktreeSourceRef,
     openDialog: openCreateWorktreeDialog,
   } = useCreateWorktreeDialog()
+  // The "Create Plugin" action lives behind the New Chat split button
+  // dropdown but only on the sentinel workspace. State is colocated
+  // here so the dialog can reach the same db client / windowId we use
+  // to focus the materialized chat once the pipeline succeeds.
+  const [createPluginOpen, setCreatePluginOpen] = useState(false)
+  // Refs into the three Allotments that compose the shell layout.
+  // We need handles on all of them so a workspace switch can
+  // imperatively move the sashes (preferredSize prop changes are
+  // ignored on already-mounted views by Allotment).
+  const outerAllotmentRef = useRef<AllotmentHandle>(null)
+  const verticalAllotmentRef = useRef<AllotmentHandle>(null)
   const innerAllotmentRef = useRef<AllotmentHandle>(null)
+  // Latest total dimensions for each Allotment, captured from
+  // their respective `onChange`s. We need the totals to compute
+  // the "other pane" size when imperatively resizing (resize()
+  // takes absolute sizes for every pane).
+  const outerTotalWidthRef = useRef(0)
+  const verticalTotalHeightRef = useRef(0)
   const innerTotalWidthRef = useRef(0)
+
+  // Reset the cached totals whenever the Allotments are not mounted
+  // (onboarding view, or no workspaces exist yet). The totals are
+  // only ever populated from each Allotment's `onChange`, so without
+  // this reset they keep their last live measurement from before
+  // onboarding. On the way back to workspace mode the workspace-
+  // switch effect and the inner-re-resize effect would then see
+  // `total > 0`, treat that as "we have a live size to resize
+  // against", and call `handle.resize([...])` on a freshly remounted
+  // Allotment whose internal view bookkeeping has not finished
+  // reconciling — producing
+  // `Cannot read properties of undefined (reading 'minimumSize')`
+  // from inside `Splitview.resizeViews`. Clearing the refs here makes
+  // the existing `total <= 0` guards correctly recognise the remount
+  // as a first-paint and defer to each pane's `preferredSize={...}`
+  // for the initial layout instead.
+  const hasAnyWorkspace = useDb(
+    root => Object.keys(root.app.workspaces).length > 0,
+  )
+  const allotmentsMounted =
+    hasAnyWorkspace && activeView.kind !== "onboarding"
+  useLayoutEffect(() => {
+    if (allotmentsMounted) return
+    outerTotalWidthRef.current = 0
+    verticalTotalHeightRef.current = 0
+    innerTotalWidthRef.current = 0
+  }, [allotmentsMounted])
 
   // When the right body pane is added or removed, Allotment internally
   // calls `addView(Sizing.Distribute)` which equalises every pane to
@@ -221,12 +287,145 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRightBodyOpen])
 
+  // Workspace OR scope switch: imperatively move every shell sash
+  // to the new identity's saved position. `preferredSize` prop
+  // updates alone don't move anything — Allotment stores the new
+  // value but only consults it on mount / visibility-restore — so
+  // we drive sash positions through `ref.current.resize(...)` here.
+  //
+  // The outer Allotment tracks the *workspace* (its sized pane is
+  // the left sidebar, which is workspace-wide). The vertical and
+  // inner Allotments track the *scope* (their sized panes are the
+  // bottom panel and right sidebar, whose content already swaps
+  // per scope via the iframe args). We fire on either id changing
+  // and only resize the Allotments whose identity actually flipped.
+  //
+  // Skipped on the very first render: the Allotments' resize
+  // observers haven't filled `*TotalRef` yet, so there's nothing
+  // to resize against. `preferredSize={...}` on the panes already
+  // seeds the first paint with the right values.
+  //
+  // We deliberately use `onDragEnd` (not `onChange`) below to
+  // persist sizes: the imperative resize calls in this effect
+  // would otherwise re-enter our own write path with the OLD
+  // render's `onChange` closure (Allotment binds `onChange` in a
+  // useEffect that runs after paint, while this useLayoutEffect
+  // runs before paint). `onDragEnd` only fires on real user drags,
+  // so that round-trip is impossible.
+  const prevWorkspaceRef = useRef(activeWorkspaceId)
+  const prevScopeRef = useRef(activeScopeId)
+  useLayoutEffect(() => {
+    const workspaceChanged = prevWorkspaceRef.current !== activeWorkspaceId
+    const scopeChanged = prevScopeRef.current !== activeScopeId
+    if (!workspaceChanged && !scopeChanged) return
+    prevWorkspaceRef.current = activeWorkspaceId
+    prevScopeRef.current = activeScopeId
+
+    if (workspaceChanged) {
+      const outerTotal = outerTotalWidthRef.current
+      if (outerTotal > 0 && sidebarOpen) {
+        outerAllotmentRef.current?.resize([
+          sidebarWidth,
+          Math.max(0, outerTotal - sidebarWidth),
+        ])
+      }
+    }
+    if (workspaceChanged || scopeChanged) {
+      const verticalTotal = verticalTotalHeightRef.current
+      if (verticalTotal > 0 && terminalOpen) {
+        verticalAllotmentRef.current?.resize([
+          Math.max(0, verticalTotal - terminalHeight),
+          terminalHeight,
+        ])
+      }
+      const innerTotal = innerTotalWidthRef.current
+      if (innerTotal > 0 && isRightBodyOpen) {
+        innerAllotmentRef.current?.resize([
+          Math.max(0, innerTotal - rightSidebarWidth),
+          rightSidebarWidth,
+        ])
+      }
+    }
+  }, [
+    activeWorkspaceId,
+    activeScopeId,
+    sidebarOpen,
+    terminalOpen,
+    isRightBodyOpen,
+    sidebarWidth,
+    rightSidebarWidth,
+    terminalHeight,
+  ])
+
   useEffect(() => {
     const off = events.app.toggleTerminal.subscribe(() => {
       setTerminalOpen(o => !o)
     })
     return off
   }, [events])
+
+  // Pull focus into the terminal iframe whenever the bottom panel
+  // opens, and *push it back out* whenever the panel closes. Two
+  // facts make this the right place for this code:
+  //
+  //   1. Cmd+J is intercepted in the *main* process'
+  //      `before-input-event` handler, which `preventDefault()`s the
+  //      keydown before it ever reaches the renderer. The iframe
+  //      therefore has no recent user activation — every
+  //      `window.focus()` / `contentWindow.focus()` call *from
+  //      inside* the iframe is silently rejected by Chrome.
+  //
+  //   2. Parent→child `iframeEl.focus()` (the DOM API on the
+  //      `<iframe>` element itself) is **not** gated by user
+  //      activation. It just moves the parent document's
+  //      `activeElement` onto the iframe. The iframe's `window`
+  //      then receives a `focus` event, and the iframe-side code
+  //      listens for that and routes focus to its inner term.
+  //
+  // On open we wait one `requestAnimationFrame` so Allotment can
+  // commit the pane's transition from hidden → visible — a
+  // `display:none` iframe isn't focusable, but a 0-sized visible
+  // iframe is, so as long as the layout pass has run we're fine.
+  //
+  // On close we have to actively `blur()` the iframe and refocus
+  // the parent shell. Allotment's `visible={false}` just collapses
+  // the pane's size; the iframe element stays in the DOM and
+  // remains `document.activeElement`. Without this, the (now
+  // hidden) terminal iframe's webContents keeps receiving every
+  // keystroke — so any shortcut wired purely as a parent-window
+  // `keydown` listener (Cmd+G for the right sidebar, the command
+  // palette's capture-phase Esc, find-in-chat, etc.) never fires.
+  // Shortcuts routed through the main process'
+  // `before-input-event` bus still work either way, which is why
+  // Cmd+J itself reopens the panel just fine but everything else
+  // looks dead until you click somewhere outside the (invisible)
+  // terminal.
+  const wasTerminalOpenRef = useRef(terminalOpen)
+  useEffect(() => {
+    const wasOpen = wasTerminalOpenRef.current
+    wasTerminalOpenRef.current = terminalOpen
+    if (wasOpen === terminalOpen) return
+    if (terminalOpen) {
+      const raf = requestAnimationFrame(() => {
+        const iframe = document.querySelector<HTMLIFrameElement>(
+          'iframe[src*="type=terminal"]',
+        )
+        iframe?.focus()
+      })
+      return () => cancelAnimationFrame(raf)
+    }
+    const iframe = document.querySelector<HTMLIFrameElement>(
+      'iframe[src*="type=terminal"]',
+    )
+    // Only steal focus back if it was actually parked on the
+    // terminal iframe — we don't want to yank focus out of, say,
+    // the composer just because the user toggled the panel shut
+    // with a button click.
+    if (iframe && document.activeElement === iframe) {
+      iframe.blur()
+      window.focus()
+    }
+  }, [terminalOpen])
 
   // Sidebar views call `rpc.app.fileTree.openFile`, which emits this
   // event. The main shell owns the pane layout, so we catch the event
@@ -269,18 +468,54 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
     return off
   }, [events, dbClient, windowId])
 
+  // The `openDiffInActivePane` payload carries the *originating*
+  // workspace + scope (turn-summary cards know which chat they belong
+  // to; the git-tree sidebar reads them off its active scope), so we
+  // route through `openViewBySourceInWorkspaceInRoot` instead of
+  // letting the shell fall back to the window's currently-active
+  // workspace. That fallback was the bug behind "click turn-summary
+  // → workspace silently switches": with two workspaces open in the
+  // same window, the active one could easily differ from the chat's
+  // own workspace by the time the event reached this handler.
   useEffect(() => {
-    const off = events.app.openDiffInActivePane.subscribe(({ directory, path }) => {
-      void dbClient.update(root => {
-        openViewBySourceInRoot(
-          root,
-          windowId,
-          "git-diff",
-          "git-tree-sidebar",
-          { directory, path },
-        )
-      })
-    })
+    const off = events.app.openDiffInActivePane.subscribe(
+      ({ workspaceId: targetWorkspaceId, scopeId, directory, path }) => {
+        void dbClient.update(root => {
+          openViewBySourceInWorkspaceInRoot(
+            root,
+            windowId,
+            targetWorkspaceId,
+            scopeId,
+            "git-diff",
+            "git-tree-sidebar",
+            { directory, path },
+          )
+        })
+      },
+    )
+    return off
+  }, [events, dbClient, windowId])
+
+  // Palette / chat-advice / etc. emit `openPullRequestsView` to
+  // land us on the Pull Requests view. The event carries the host
+  // open mode (`new-tab` / `split-right` / `replace`) so the same
+  // event can power both the palette entries and any future
+  // service-side triggers without each caller re-implementing the
+  // pane placement. The service has already started prefetching by
+  // the time this fires, so the iframe usually mounts against a
+  // warm cache.
+  useEffect(() => {
+    const off = events.app.openPullRequestsView.subscribe(
+      ({ mode, prNumber, directory, openMode }) => {
+        void dbClient.update(root => {
+          openViewInRoot(root, windowId, "pull-requests", openMode, {
+            mode,
+            prNumber,
+            directory,
+          })
+        })
+      },
+    )
     return off
   }, [events, dbClient, windowId])
 
@@ -464,12 +699,17 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
       )
     }
 
-    // Index non-archived scopes in this workspace, keyed by id.
-    // Archived scopes are soft-hidden from the sidebar; their
-    // chats keep working (they remain available as tabs and via
-    // the agents palette) but don't render as a group here.
+    // Index non-archived, non-completed scopes in this workspace,
+    // keyed by id. Archived and completed scopes are soft-hidden
+    // from the sidebar; their chats keep working (they remain
+    // available as tabs and via the agents palette) but don't
+    // render as a group here — they live in the footer popover
+    // instead.
     const wsScopes = scopes.filter(
-      s => s.workspaceId === activeWorkspaceId && !s.archived,
+      s =>
+        s.workspaceId === activeWorkspaceId &&
+        !s.archived &&
+        !s.completed,
     )
     const scopeById = new Map(wsScopes.map(s => [s.id, s] as const))
 
@@ -503,16 +743,36 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
       const sorted = groupChats.slice().sort((a, b) => sortKey(b) - sortKey(a))
       out.push({ scope, chats: sorted, isStreaming })
     }
-    // Group order is stable: earliest-created scope first, with
-    // directory as a tiebreaker so worktrees imported in one batch
-    // (identical createdAt) still have a deterministic order. The
-    // `sidebarChatSort` preference applies to chats WITHIN a group,
-    // not to the groups themselves — reordering groups on click or
-    // on a single message landing is confusing.
+    // Group order: pinned scopes first, then unpinned. Within each
+    // bucket the sort key is a wall-clock timestamp, descending.
+    //
+    //   pinned   → `pinnedAt` (most recently pinned bubbles up;
+    //              the implicitly-pinned main worktree, which
+    //              uses createdAt as its pinnedAt, naturally sits
+    //              at the bottom of the pinned section).
+    //   unpinned → `max(unpinnedAt ?? 0, createdAt)` so a freshly-
+    //              unpinned scope appears at the top of the
+    //              unpinned section instead of dropping to the
+    //              bottom (which would feel like the user just
+    //              lost it). Freshly-created scopes also bubble
+    //              up because their createdAt is the most recent
+    //              value either way.
+    //
+    // We deliberately do NOT honor `sidebarChatSort` at the group
+    // level — that preference applies to chats inside a group;
+    // reordering groups on every new message would be confusing.
+    const pinnedKey = (s: Scope) => s.pinnedAt ?? 0
+    const unpinnedKey = (s: Scope) =>
+      Math.max(s.unpinnedAt ?? 0, s.createdAt)
     out.sort((a, b) => {
-      if (a.scope.createdAt !== b.scope.createdAt) {
-        return a.scope.createdAt - b.scope.createdAt
-      }
+      const aPinned = a.scope.pinnedAt != null
+      const bPinned = b.scope.pinnedAt != null
+      if (aPinned !== bPinned) return aPinned ? -1 : 1
+      const keyA = aPinned ? pinnedKey(a.scope) : unpinnedKey(a.scope)
+      const keyB = bPinned ? pinnedKey(b.scope) : unpinnedKey(b.scope)
+      if (keyA !== keyB) return keyB - keyA
+      // Stable tiebreaker for batch-imported worktrees so the
+      // order is deterministic across reloads.
       return a.scope.directory.localeCompare(b.scope.directory)
     })
     return out
@@ -699,9 +959,12 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
               ) {
                 win.selectedScopeId = null
               }
-              if (win.selectedWorkspaceId === workspaceId) {
-                win.selectedWorkspaceId = null
-              }
+              // Don't touch `activeView` here. If the archived
+              // workspace was the active one, `activeView` keeps
+              // pointing at it; `App`'s boot effect notices the
+              // workspace is no longer in the non-archived list
+              // and auto-selects the next one (or drops to
+              // onboarding when there are none left).
             }
           }
         })
@@ -752,9 +1015,11 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
             if (ws.selectedScopeId && wsScopeSet.has(ws.selectedScopeId)) {
               ws.selectedScopeId = null
             }
-            if (ws.selectedWorkspaceId === workspaceId) {
-              ws.selectedWorkspaceId = null
-            }
+            // Same as archive: leave `activeView` alone. After we
+            // delete the workspace, `App`'s boot effect sees
+            // `activeView.workspaceId` pointing at something that
+            // no longer exists and reselects (or drops to
+            // onboarding).
             delete ws.workspacePanes[workspaceId]
           }
         })
@@ -770,12 +1035,15 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
     [selectWorkspace],
   )
 
-  const createWorkspaceFromDirectory = useCreateWorkspaceFromDirectory()
-  const handleAddWorkspace = useCallback(async () => {
-    const picked = await rpc.app.dialog.pickFolder()
-    if (picked.cancelled) return
-    await createWorkspaceFromDirectory(picked.path)
-  }, [rpc, createWorkspaceFromDirectory])
+  // The rail's "+" doesn't prompt for a directory directly
+  // anymore — it routes the window to the onboarding view (a
+  // small window-level "router" tracked in window state).
+  // `EmptyWorkspaceScreen` owns the open-folder / clone-from-URL
+  // flow, and `useCreateWorkspaceFromDirectory` flips `activeView`
+  // back to `workspace` once a workspace exists.
+  const handleAddWorkspace = useCallback(() => {
+    showOnboardingView()
+  }, [showOnboardingView])
 
   // Sidebar "New Chat" (and ⌘N): create a fresh chat and *replace*
   // the active tab's chat with it (no new tab). The EditorView is
@@ -849,12 +1117,29 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
   // that already shows this chat (so we don't clobber the active
   // tab in the destination workspace's pane state); otherwise
   // replace the active tab via `selectChatInRoot`.
+  //
+  // If the destination chat has a saved draft we also fire a
+  // `requestFocusComposer` after the switch. The composer's
+  // EditorView is reused across chat swaps and only auto-focuses
+  // on mount, so without this nudge clicking the draft glyph would
+  // land you on the chat with the draft visible but the cursor
+  // still in the old composer. Reading the draft straight off the
+  // local replica is fine — `useChatDraft` flushes synchronously
+  // on unmount, so by the time the user clicks another row the
+  // outgoing chat's draft has already landed in `chatStates`.
   const handleSelectChat = useCallback(
     (id: string) => {
-      void dbClient.update(root => {
-        if (focusPaneShowingChatInRoot(root, windowId, id)) return
-        selectChatInRoot(root, windowId, id)
-      })
+      const destDraft =
+        dbClient.readRoot().app.chatStates[id]?.draft ?? ""
+      const hasDraft = destDraft.trim().length > 0
+      void dbClient
+        .update(root => {
+          if (focusPaneShowingChatInRoot(root, windowId, id)) return
+          selectChatInRoot(root, windowId, id)
+        })
+        .then(() => {
+          if (hasDraft) requestFocusComposer(id)
+        })
     },
     [dbClient, windowId],
   )
@@ -911,7 +1196,9 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
   // so the group disappears from the sidebar; chats inside the
   // scope remain accessible as tabs and via the palette. Refuses
   // to archive the only remaining visible scope so the sidebar
-  // never goes empty.
+  // never goes empty. Also stamps `archivedAt` so the
+  // archived-worktrees footer popover can sort by
+  // most-recently-archived without having to walk sessions.
   const archiveWorktreeScope = useCallback(
     (scopeId: string) => {
       const remainingGroups = sidebarGroups.filter(
@@ -927,9 +1214,77 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
         const scope = root.app.scopes[scopeId]
         if (!scope) return
         scope.archived = true
+        scope.archivedAt = Date.now()
+        // If the scope was also marked completed, clear the
+        // completed flag — a worktree only belongs in one of the
+        // two footer buckets at a time, and the user's most
+        // recent action wins.
+        if (scope.completed) {
+          scope.completed = false
+          scope.completedAt = null
+        }
       })
     },
     [dbClient, sidebarGroups],
+  )
+
+  // Mark a worktree group as completed. Same UX as archive (hides
+  // the group from the sidebar; chats stay reachable through tabs
+  // and the palette), but distinguished from archive so users can
+  // visually separate "shelved" worktrees from "finished" ones in
+  // the footer popover. Stamps `completedAt` for sortability and
+  // refuses to hide the last visible scope, same as archive.
+  const completeWorktreeScope = useCallback(
+    (scopeId: string) => {
+      const remainingGroups = sidebarGroups.filter(
+        g => g.scope.id !== scopeId,
+      )
+      if (remainingGroups.length === 0) {
+        console.warn(
+          "[sidebar] refusing to complete the only visible worktree",
+        )
+        return
+      }
+      void dbClient.update(root => {
+        const scope = root.app.scopes[scopeId]
+        if (!scope) return
+        scope.completed = true
+        scope.completedAt = Date.now()
+        if (scope.archived) {
+          scope.archived = false
+          scope.archivedAt = null
+        }
+      })
+    },
+    [dbClient, sidebarGroups],
+  )
+
+  // Toggle pinned state on a worktree group. Pinning stamps
+  // `pinnedAt = now` and clears `unpinnedAt`; unpinning does the
+  // reverse (stamps `unpinnedAt` so the row stays near the top of
+  // the unpinned section instead of falling to the bottom, and
+  // nulls out `pinnedAt`). All writes go through the local replica
+  // — there's no async server work to wait on, so the row reorders
+  // instantly on click.
+  const toggleWorktreeScopePin = useCallback(
+    (scopeId: string) => {
+      void dbClient.update(root => {
+        const scope = root.app.scopes[scopeId]
+        if (!scope) return
+        const now = Date.now()
+        if (scope.pinnedAt != null) {
+          scope.pinnedAt = null
+          scope.unpinnedAt = now
+        } else {
+          scope.pinnedAt = now
+          // We deliberately leave `unpinnedAt` alone so the
+          // priority key for the unpinned bucket survives a
+          // pin→unpin cycle (the row goes back where it was
+          // before, not to the bottom).
+        }
+      })
+    },
+    [dbClient],
   )
 
   // Right-click on a worktree-group header in the new sidebar.
@@ -1152,35 +1507,49 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
       <ErrorBoundary label="Title bar">
-      <TitleBar
-        left={
-          <>
-            <SidebarToggle
-              open={sidebarOpen}
-              onToggle={() => setSidebarOpen(o => !o)}
-            />
-          </>
-        }
-        center={
-          activeWorkspace ? (
-            <TitleBarWorkspace
-              name={workspaceLabel(activeWorkspace)}
-              icon={activeWorkspace.icon ?? null}
-            />
-          ) : null
-        }
-        right={
-          <>
-            <CommitButton directory={activeScope?.directory ?? null} />
-            {sidebarViews.length > 0 && (
-              <RightSidebarToggle
-                open={isRightBodyOpen}
-                onToggle={onRightToggle}
+      {activeView.kind === "onboarding" ? (
+        // Onboarding has no workspace context: the chat sidebar,
+        // working area, commit button, and right-sidebar views
+        // are all hidden, so none of the workspace title-bar
+        // controls would do anything. Render a minimal bar that's
+        // just a draggable surface with a centered label.
+        <TitleBar label="New workspace" />
+      ) : (
+        <TitleBar
+          left={
+            <>
+              <SidebarToggle
+                open={sidebarOpen}
+                onToggle={() => setSidebarOpen(o => !o)}
               />
-            )}
-          </>
-        }
-      />
+            </>
+          }
+          center={
+            activeWorkspace ? (
+              <TitleBarWorkspace
+                name={workspaceLabel(activeWorkspace)}
+                icon={activeWorkspace.icon ?? null}
+              />
+            ) : null
+          }
+          right={
+            <>
+              <PlayButton
+                workspaceId={activeWorkspaceId}
+                scopeId={activeScope?.id ?? null}
+                cwd={activeScope?.directory ?? null}
+              />
+              <CommitButton directory={activeScope?.directory ?? null} />
+              {sidebarViews.length > 0 && (
+                <RightSidebarToggle
+                  open={isRightBodyOpen}
+                  onToggle={onRightToggle}
+                />
+              )}
+            </>
+          }
+        />
+      )}
       </ErrorBoundary>
 
       <div
@@ -1191,7 +1560,12 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
           <WorkspaceRail
             workspaces={rail}
             pinnedBottomWorkspaces={pinnedBottomRail}
+            // `activeWorkspaceId` is already null while onboarding
+            // is the active view (it's derived from `activeView`'s
+            // workspace case), so no tile lights up. `addActive`
+            // makes the "+" itself light up in that mode.
             activeId={activeWorkspaceId}
+            addActive={activeView.kind === "onboarding"}
             onSelect={handleSelectWorkspace}
             onAdd={handleAddWorkspace}
             onContextMenu={(id, e) => {
@@ -1209,10 +1583,11 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
         )}
         <div className="relative min-h-0 min-w-0 flex-1">
           <ErrorBoundary label="Workspace">
-          {workspaces.length === 0 ? (
+          {workspaces.length === 0 || activeView.kind === "onboarding" ? (
             <EmptyWorkspaceScreen />
           ) : (
           <Allotment
+            ref={outerAllotmentRef}
             // Marks this as the outermost app-shell Allotment. The
             // 12px separator inset in `main.css` is scoped to this
             // class so it only applies here (where the separator
@@ -1222,8 +1597,20 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
             className="app-shell-allotment"
             proportionalLayout={false}
             onChange={sizes => {
+              // Track the live total so the workspace-switch effect
+              // can compute the "other pane" size when it imperatively
+              // resizes. The persistence write happens on `onDragEnd`,
+              // not here — see the workspace-switch comment for why.
+              outerTotalWidthRef.current = sizes.reduce(
+                (a, b) => a + b,
+                0,
+              )
+            }}
+            onDragEnd={sizes => {
               const [left] = sizes
-              if (sidebarOpen && left > 0) setSidebarWidth(left)
+              if (sidebarOpen && left > 0) {
+                setWorkspaceLayout({ sidebarWidth: left })
+              }
             }}
             onVisibleChange={(index, visible) => {
               if (index === 0 && !visible) setSidebarOpen(false)
@@ -1258,6 +1645,11 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
                             onImportWorktrees={
                               activeRepo ? handleImportWorktrees : undefined
                             }
+                            onCreatePlugin={
+                              activeWorkspace?.sentinel
+                                ? () => setCreatePluginOpen(true)
+                                : undefined
+                            }
                             newChatShortcut="⌘N"
                           />
                         </div>
@@ -1276,6 +1668,8 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
                         setBranchPrompt({ sessionId, entryId, label })
                       }}
                     />
+                  ) : leftSidebarTab === "extra-dirs" ? (
+                    <ExtraDirsSidebar />
                   ) : sidebarGroups.length === 0 ? (
                     <div className="px-3 py-6 text-center text-[11px] text-muted-foreground">
                       No chats here yet.
@@ -1326,6 +1720,56 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
                       const collapsed =
                         collapsedGroups[group.scope.id] ?? false
                       const scopeForGroup = group.scope
+                      // Surface child streaming activity on the
+                      // group header when collapsed so users can
+                      // still see that an agent is working inside.
+                      // The header itself only renders the spinner
+                      // while collapsed; we always compute it so
+                      // the prop stays in sync as soon as the user
+                      // toggles open/closed.
+                      const groupIsStreaming = group.chats.some(
+                        chat =>
+                          chat.session.kind === "ready" &&
+                          (sessionsById[chat.session.sessionId]
+                            ?.isStreaming ??
+                            false),
+                      )
+                      // Surface the active chat's selection on the
+                      // group header when collapsed, so the user can
+                      // still see which worktree contains their
+                      // active chat. Same reasoning as
+                      // `groupIsStreaming` — the child row isn't
+                      // mounted while collapsed, so without this
+                      // there's nothing visually indicating "the
+                      // active chat lives inside here".
+                      const groupHasActiveChat = group.chats.some(
+                        chat =>
+                          isChatActiveForSession(
+                            chat,
+                            activeChatId,
+                            chats,
+                          ),
+                      )
+                      // Surface unread state the same way: if any
+                      // chat in this group has the unread dot AND it
+                      // isn't the active chat (the dot is suppressed
+                      // on the active row by definition), bubble it
+                      // up to the group header while collapsed.
+                      const groupHasUnread = group.chats.some(chat => {
+                        if (chat.session.kind !== "ready") return false
+                        const isActive = isChatActiveForSession(
+                          chat,
+                          activeChatId,
+                          chats,
+                        )
+                        if (isActive) return false
+                        const s = sessionsById[chat.session.sessionId]
+                        if (!s) return false
+                        return (
+                          s.lastCompletedAt != null &&
+                          s.lastCompletedAt > (s.lastOpenedAt ?? 0)
+                        )
+                      })
                       return (
                         <WorktreeGroupRow
                           key={group.scope.id}
@@ -1333,7 +1777,15 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
                             scopeForGroup,
                             activeRepo,
                           )}
+                          rightIndicator={
+                            scopeForGroup.pluginName != null ? (
+                              <WorktreeGroupPluginIcon />
+                            ) : null
+                          }
                           collapsed={collapsed}
+                          isStreaming={groupIsStreaming}
+                          isActiveChildCollapsed={groupHasActiveChat}
+                          hasUnread={groupHasUnread}
                           onToggle={() => {
                             toggleWorktreeGroup(group.scope.id)
                           }}
@@ -1343,15 +1795,70 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
                               e,
                             )
                           }}
+                          pinned={scopeForGroup.pinnedAt != null}
+                          pinSlot={
+                            sidebarGroups.length > 1 ? (
+                              <WorktreeGroupPinButton
+                                pinned={
+                                  scopeForGroup.pinnedAt != null
+                                }
+                                onToggle={() => {
+                                  toggleWorktreeScopePin(
+                                    scopeForGroup.id,
+                                  )
+                                }}
+                              />
+                            ) : null
+                          }
                           hoverActions={
-                            <ChatRowActionButton
-                              title="Archive worktree"
-                              onClick={() => {
-                                archiveWorktreeScope(scopeForGroup.id)
-                              }}
-                            >
-                              <ArchiveIcon />
-                            </ChatRowActionButton>
+                            <>
+                              <ChatRowActionButton
+                                title="New chat in this worktree"
+                                onClick={() => {
+                                  createChatInScope(scopeForGroup.id)
+                                }}
+                              >
+                                <ComposeIcon />
+                              </ChatRowActionButton>
+                              <ChatRowActionButton
+                                title="More"
+                                onClick={async e => {
+                                  const rect = (
+                                    e.currentTarget as HTMLButtonElement
+                                  ).getBoundingClientRect()
+                                  const { chosenId } =
+                                    await rpc.app.contextMenu.show({
+                                      x: Math.round(rect.right),
+                                      y: Math.round(rect.bottom),
+                                      items: [
+                                        {
+                                          id: "archive",
+                                          label: "Archive worktree",
+                                          enabled:
+                                            sidebarGroups.length > 1,
+                                        },
+                                        {
+                                          id: "complete",
+                                          label: "Mark worktree as completed",
+                                          enabled:
+                                            sidebarGroups.length > 1,
+                                        },
+                                      ],
+                                    })
+                                  if (chosenId === "archive") {
+                                    archiveWorktreeScope(
+                                      scopeForGroup.id,
+                                    )
+                                  } else if (chosenId === "complete") {
+                                    completeWorktreeScope(
+                                      scopeForGroup.id,
+                                    )
+                                  }
+                                }}
+                              >
+                                <MoreIcon />
+                              </ChatRowActionButton>
+                            </>
                           }
                         >
                           {group.chats.map(chat => (
@@ -1398,12 +1905,19 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
 
             <Allotment.Pane priority={LayoutPriority.High}>
               <Allotment
+                ref={verticalAllotmentRef}
                 vertical
                 proportionalLayout={false}
                 onChange={sizes => {
+                  verticalTotalHeightRef.current = sizes.reduce(
+                    (a, b) => a + b,
+                    0,
+                  )
+                }}
+                onDragEnd={sizes => {
                   const bottom = sizes[1]
                   if (terminalOpen && bottom != null && bottom > 0) {
-                    setTerminalHeight(bottom)
+                    setWorkspaceLayout({ terminalHeight: bottom })
                   }
                 }}
                 onVisibleChange={(index, visible) => {
@@ -1419,9 +1933,11 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
                         (a, b) => a + b,
                         0,
                       )
+                    }}
+                    onDragEnd={sizes => {
                       const right = sizes[1]
                       if (isRightBodyOpen && right != null && right > 0) {
-                        setRightSidebarWidth(right)
+                        setWorkspaceLayout({ rightSidebarWidth: right })
                       }
                     }}
                     onVisibleChange={(index, visible) => {
@@ -1486,6 +2002,7 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
                         views={bottomPanelViews}
                         openType={activeBottomPanelView}
                         onSelectType={setBottomPanelView}
+                        panelOpen={terminalOpen}
                         args={{
                           windowId,
                           scopeId: activeScope?.id ?? null,
@@ -1546,6 +2063,10 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
               )
               finalScopeId = existing?.id ?? newScopeId
               if (!existing) {
+                // "New worktree" from the split-button creates a
+                // secondary worktree off of an existing branch —
+                // never the main one — so it starts unpinned and
+                // sorts above older scopes by createdAt.
                 root.app.scopes[finalScopeId] = {
                   id: finalScopeId,
                   workspaceId,
@@ -1554,11 +2075,24 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
                   extraDirectories: [],
                   createdAt: now,
                   archived: false,
+                  completed: false,
+                  archivedAt: null,
+                  completedAt: null,
+                  pinnedAt: null,
+                  unpinnedAt: null,
                 }
-              } else if (existing.archived) {
-                // Reusing a soft-hidden scope: un-archive it so the
-                // group reappears in the sidebar.
-                existing.archived = false
+              } else {
+                // Reusing a soft-hidden scope: un-archive /
+                // un-complete it so the group reappears in the
+                // sidebar. Mirrors `useImportWorktrees`.
+                if (existing.archived) {
+                  existing.archived = false
+                  existing.archivedAt = null
+                }
+                if (existing.completed) {
+                  existing.completed = false
+                  existing.completedAt = null
+                }
               }
               root.app.chats[chatId] = {
                 id: chatId,
@@ -1581,6 +2115,23 @@ export function AgentSidebarPane({ onOpenSettings }: AgentSidebarPaneProps) {
                     err,
                   ),
                 )
+              requestFocusComposer(chatId)
+            })
+        }}
+      />
+      <CreatePluginDialog
+        open={createPluginOpen}
+        onOpenChange={setCreatePluginOpen}
+        onCreated={({ chatId }) => {
+          // The service already materialized the scope + chat in the
+          // db replica. Just select the new chat in the active pane
+          // and nudge the composer to refocus, mirroring the create-
+          // worktree path.
+          void dbClient
+            .update(root => {
+              selectChatInRoot(root, windowId, chatId)
+            })
+            .then(() => {
               requestFocusComposer(chatId)
             })
         }}
@@ -1710,6 +2261,26 @@ function ChatSidebarItem({
     chat.session.kind === "ready" ? chat.session.sessionId : null
   const summary = useSummary(sessionId)
   const { label } = resolveChatLabel(chat, session, summary)
+  // Subscribe per-row to *just this chat's* draft. We deliberately
+  // don't pull the whole `chatStates` map into the parent and pass
+  // a `hasDraft` flag down — doing it here means typing in one chat
+  // only re-renders that chat's sidebar item, not every row.
+  // Empty / whitespace-only drafts don't count (the composer
+  // collapses to an empty editor for them, so flagging the row
+  // would be misleading).
+  const draftText = useDb(
+    root => root.app.chatStates[chat.id]?.draft ?? "",
+  )
+  const hasDraft = !isActive && draftText.trim().length > 0
+  // Unread = agent completed a turn since the user last opened the
+  // chat. The dot is suppressed on the active row because the user
+  // is by definition "on it" (and `SessionActivityService` is
+  // about to bump `lastOpenedAt` on the next recompute).
+  const hasUnread =
+    !isActive &&
+    session != null &&
+    session.lastCompletedAt != null &&
+    session.lastCompletedAt > (session.lastOpenedAt ?? 0)
 
   return (
     <ChatTreeRow
@@ -1717,6 +2288,8 @@ function ChatSidebarItem({
       isGeneratingTitle={false}
       isActive={isActive}
       isStreaming={session?.isStreaming ?? false}
+      hasUnread={hasUnread}
+      hasDraft={hasDraft}
       timestamp={session?.lastActivityAt ?? chat.createdAt}
       expandable={false}
       isExpanded={false}
@@ -1792,6 +2365,56 @@ function isChatActiveForSession(
   const active = allChats.find(c => c.id === activeChatId)
   if (!active || active.session.kind !== "ready") return false
   return active.session.sessionId === row.session.sessionId
+}
+
+/**
+ * Pin / unpin button for the right edge of a worktree-group row.
+ * Always mounted in the same x position and always visible (when
+ * the parent decides multi-worktree mode is on) so toggling
+ * pinned state doesn't shift the row layout and the user can see
+ * the affordance without hovering.
+ *
+ * Pinned   → filled glyph at full opacity ("this is the anchor").
+ * Unpinned → outlined glyph at low opacity, brightens on direct
+ *             hover or whenever the row is hovered (matches the
+ *             feel of the compose / more actions sliding in).
+ */
+function WorktreeGroupPinButton({
+  pinned,
+  onToggle,
+}: {
+  pinned: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={pinned ? "Unpin worktree" : "Pin worktree"}
+      title={pinned ? "Unpin worktree" : "Pin worktree"}
+      aria-pressed={pinned}
+      onClick={e => {
+        e.stopPropagation()
+        onToggle()
+      }}
+      onMouseDown={e => e.stopPropagation()}
+      className={cn(
+        "flex h-[20px] w-[20px] items-center justify-center rounded text-muted-foreground transition-opacity hover:bg-foreground/10 hover:text-foreground",
+        pinned
+          ? // Pinned anchor: always visible, full opacity. Acts
+            // as both "this is the anchor" indicator and the
+            // click target to unpin.
+            "opacity-100"
+          : // Unpinned: hidden at rest so the row reads clean.
+            // Fades in on row hover (alongside compose / more)
+            // so the user can discover the pin affordance.
+            // `pointer-events-none` while hidden so the
+            // invisible button doesn't intercept row clicks.
+            "opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto",
+      )}
+    >
+      <PinIcon filled={pinned} />
+    </button>
+  )
 }
 
 function ChatRowActionButton({
@@ -1876,6 +2499,29 @@ function MoreIcon() {
   )
 }
 
+function PinIcon({ filled }: { filled: boolean }) {
+  // Lucide-style thumbtack glyph: a tilted pin with the tack head
+  // top-right and the point bottom-left. When `filled` we keep the
+  // outlined stroke but flood the head/shaft so the pinned state
+  // reads as "sticky / locked in place" at a glance.
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ pointerEvents: "none" }}
+    >
+      <path d="M12 17v5" />
+      <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+    </svg>
+  )
+}
+
 function ComposeIcon() {
   return (
     <svg
@@ -1890,6 +2536,37 @@ function ComposeIcon() {
     >
       <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7" />
       <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+    </svg>
+  )
+}
+
+/**
+ * Right-edge puzzle indicator rendered next to plugin-development
+ * worktree groups (scopes with `pluginName != null`). Lives in
+ * `WorktreeGroupRow`'s `rightIndicator` slot so the row's own
+ * hover-out transition handles visibility — we just need the
+ * glyph. Wrapping in `<title>` gives a free native tooltip
+ * without pulling in our popover stack for a passive indicator.
+ */
+function WorktreeGroupPluginIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-label="Plugin worktree"
+    >
+      <title>Plugin worktree</title>
+      {/* Lucide `Puzzle` icon path — kept inline (rather than
+          pulling in the React component) so this glyph stays
+          consistent with the other hand-rolled svgs in this file,
+          which all share the same 24x24 viewBox + stroke setup. */}
+      <path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z" />
     </svg>
   )
 }

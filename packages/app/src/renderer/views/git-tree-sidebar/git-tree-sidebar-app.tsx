@@ -54,12 +54,22 @@ export function GitTreeSidebarApp() {
   return (
     <SidebarTreeForScope
       key={active.scopeId}
+      workspaceId={active.workspaceId}
+      scopeId={active.scopeId}
       directory={active.directory}
     />
   )
 }
 
-function SidebarTreeForScope({ directory }: { directory: string }) {
+function SidebarTreeForScope({
+  workspaceId,
+  scopeId,
+  directory,
+}: {
+  workspaceId: string
+  scopeId: string
+  directory: string
+}) {
   const status = usePolledStatus(directory)
 
   if (status == null) {
@@ -80,15 +90,24 @@ function SidebarTreeForScope({ directory }: { directory: string }) {
 
   return (
     <div className="relative h-full min-h-0 w-full bg-background text-foreground">
-      <SidebarTree directory={directory} files={status.files} />
+      <SidebarTree
+        workspaceId={workspaceId}
+        scopeId={scopeId}
+        directory={directory}
+        files={status.files}
+      />
     </div>
   )
 }
 
 function SidebarTree({
+  workspaceId,
+  scopeId,
   directory,
   files,
 }: {
+  workspaceId: string
+  scopeId: string
   directory: string
   files: readonly GitFileStatus[]
 }) {
@@ -113,7 +132,7 @@ function SidebarTree({
   const openRef = useRef<(path: string) => void>(() => {})
   openRef.current = (path: string) => {
     void rpc.app.gitTree
-      .openDiff({ directory, path })
+      .openDiff({ workspaceId, scopeId, directory, path })
       .catch(err =>
         console.error("[git-tree-sidebar] openDiff failed:", err),
       )
@@ -202,7 +221,11 @@ function mapGitStatus(file: GitFileStatus): TreeGitStatus {
   return "modified"
 }
 
-function useActiveScope(): { scopeId: string; directory: string } | null {
+function useActiveScope(): {
+  workspaceId: string
+  scopeId: string
+  directory: string
+} | null {
   return useDb(root => {
     const states = Object.values(root.app.windowStates)
     const scopeId =
@@ -210,7 +233,11 @@ function useActiveScope(): { scopeId: string; directory: string } | null {
     if (!scopeId) return null
     const scope = root.app.scopes[scopeId]
     if (!scope) return null
-    return { scopeId: scope.id, directory: scope.directory }
+    return {
+      workspaceId: scope.workspaceId,
+      scopeId: scope.id,
+      directory: scope.directory,
+    }
   })
 }
 

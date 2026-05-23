@@ -5,6 +5,7 @@ import { nanoid } from "nanoid"
 import { Service } from "@zenbujs/core/runtime"
 import { DbService } from "@zenbujs/core/services"
 import { ReposService } from "./repos"
+import { SessionsService } from "./sessions"
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 
@@ -33,7 +34,7 @@ const SENTINEL_ICON_MIME = "image/png"
  */
 export class SentinelWorkspaceService extends Service.create({
   key: "sentinelWorkspace",
-  deps: { db: DbService, repos: ReposService },
+  deps: { db: DbService, repos: ReposService, sessions: SessionsService },
 }) {
   async evaluate() {
     const root = this.ctx.db.client.readRoot()
@@ -45,11 +46,17 @@ export class SentinelWorkspaceService extends Service.create({
       // Ensure the scope still exists. If it does, we're done — we
       // don't overwrite the user's name / icon / scope choices.
       const hasScope = Object.values(root.app.scopes).some(
-        s => s.workspaceId === existing.id && !s.archived,
+        s =>
+          s.workspaceId === existing.id &&
+          !s.archived &&
+          !s.completed,
       )
       if (hasScope) return
-      // Workspace exists but its scope was archived/deleted — fall
-      // through to recreate the scope so the workspace is usable.
+      // Workspace exists but its scope was archived/completed/
+      // deleted — fall through to recreate the scope so the
+      // workspace is usable. "Completed" applies the same soft-
+      // hide semantics as "archived" from the user's POV, so we
+      // treat them identically here.
       await this.ensureScope(existing.id)
       return
     }
@@ -103,6 +110,13 @@ export class SentinelWorkspaceService extends Service.create({
         archived: false,
         sentinel: true,
       }
+      // First scope of a brand-new workspace is always the
+      // anchor — same rule as `use-create-workspace`. We don't
+      // gate on `mainWorktreePath === directory` because
+      // `process.cwd()` and the git-reported main path can
+      // differ on symlinks / trailing slashes / canonicalization,
+      // which left the sentinel workspace with no pinned row in
+      // practice.
       root.app.scopes[scopeId] = {
         id: scopeId,
         workspaceId,
@@ -111,6 +125,11 @@ export class SentinelWorkspaceService extends Service.create({
         extraDirectories: [],
         createdAt: now,
         archived: false,
+        completed: false,
+        archivedAt: null,
+        completedAt: null,
+        pinnedAt: now,
+        unpinnedAt: null,
       }
       root.app.chats[chatId] = {
         id: chatId,
@@ -119,6 +138,23 @@ export class SentinelWorkspaceService extends Service.create({
         createdAt: now,
       }
     })
+
+    // Materialize the chat's session right now so the user can
+    // actually type / submit / model-select the moment they open
+    // the sentinel workspace. Without this the chat sits in
+    // `pending` forever — composer accepts input but Enter is a
+    // silent no-op, and the agent / model selectors stay blank.
+    // Mirrors the post-DB `createChatSession` call every renderer
+    // creation site already does (use-create-workspace, addTab,
+    // addPane, sidebar New Chat, etc.).
+    try {
+      await this.ctx.sessions.createChatSession({ scopeId, chatId })
+    } catch (err) {
+      console.warn(
+        "[sentinel-workspace] createChatSession failed:",
+        err,
+      )
+    }
   }
 
   /** Recreate a scope (and pending chat) for an existing sentinel
@@ -136,6 +172,13 @@ export class SentinelWorkspaceService extends Service.create({
     await this.ctx.db.client.update(root => {
       const ws = root.app.workspaces[workspaceId]
       if (!ws) return
+      // Re-materializing the sentinel scope after the user
+      // archived / completed all of them: this is effectively
+      // "first scope of the workspace" again, so pin it as the
+      // anchor. If a previously-archived pinned scope ever gets
+      // unhidden later, having two pinned scopes is fine — the
+      // sort key is `pinnedAt` desc, the newer one just sits
+      // above the older one.
       root.app.scopes[scopeId] = {
         id: scopeId,
         workspaceId,
@@ -144,6 +187,11 @@ export class SentinelWorkspaceService extends Service.create({
         extraDirectories: [],
         createdAt: now,
         archived: false,
+        completed: false,
+        archivedAt: null,
+        completedAt: null,
+        pinnedAt: now,
+        unpinnedAt: null,
       }
       root.app.chats[chatId] = {
         id: chatId,
@@ -152,5 +200,17 @@ export class SentinelWorkspaceService extends Service.create({
         createdAt: now,
       }
     })
+
+    // Same rationale as in `createSentinel`: a chat created here
+    // is what the user is about to land on, so flip the session to
+    // `ready` immediately rather than leaving it pending.
+    try {
+      await this.ctx.sessions.createChatSession({ scopeId, chatId })
+    } catch (err) {
+      console.warn(
+        "[sentinel-workspace] createChatSession (ensureScope) failed:",
+        err,
+      )
+    }
   }
 }

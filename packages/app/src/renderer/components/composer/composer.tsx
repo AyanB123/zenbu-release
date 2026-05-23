@@ -29,6 +29,7 @@ import { SlashCommandMenu } from "./slash-command-menu"
 import { ComposerToolbar, type AgentConfig } from "./composer-toolbar"
 import { rankEntries } from "./lib/fuzzy"
 import { getImageBytes, putImage } from "./lib/image-cache"
+import { downscaleImage } from "./lib/downscale-image"
 import type { ComposerIntent, FileEntry, SlashCommand } from "./types"
 
 export type ComposerSubmitPayload = {
@@ -165,69 +166,103 @@ function caretAnchor(
  *   marker `[Image #N]` and emit an `ImageContent` part with the bytes
  *   from the renderer-local image cache.
  *
- * Synchronous because image bytes are guaranteed in the cache: the
- * paste handler calls `putImage` before adding the pill effect, so by
- * the time the user can press Enter the lookup is always a hit.
+ * Async because we downscale every image at send time per Anthropic's
+ * sizing guidance — longest edge ≤ 1568px, JPEG re-encode at q=0.9.
+ * See `lib/downscale-image.ts` for the rationale. The original bytes
+ * stay in the renderer-local cache + blob store so the composer pill
+ * and chat scrollback keep showing the user's full-resolution paste;
+ * only the wire payload is reduced.
  */
 type SerializedDoc = Omit<ComposerSubmitPayload, "intent">
 
-function serializeForSubmit(state: EditorState): SerializedDoc {
+async function serializeForSubmit(
+  state: EditorState,
+): Promise<SerializedDoc> {
   const doc = state.doc.toString()
   const pills = getPills(state).slice().sort((a, b) => a.from - b.from)
   if (pills.length === 0) {
     return { text: doc, displayText: doc, images: [], imageRefs: [] }
   }
-  let text = ""
+
+  // First pass (sync): walk pills, build displayText, and collect the
+  // raw image bytes we need to downscale. We stage the wire `text` as
+  // an array of fragments because image markers depend on the post-
+  // downscale byte size, which we only learn after the async pass.
+  type Fragment = string | { kind: "image-marker"; index: number }
+  const fragments: Fragment[] = []
   let displayText = ""
   let cursor = 0
-  const images: ImageContent[] = []
-  const imageRefs: { blobId: string; mimeType: string }[] = []
-  let imageN = 0
+  type RawImage = { blobId: string; bytes: Uint8Array; mimeType: string }
+  const raw: RawImage[] = []
   for (const p of pills) {
     if (p.from > cursor) {
       const between = state.doc.sliceString(cursor, p.from)
-      text += between
+      fragments.push(between)
       displayText += between
     }
     if (p.kind === "file") {
-      // Doc text already equals `@<filePath>`; pass through verbatim.
       const slice = state.doc.sliceString(p.from, p.to)
-      text += slice
+      fragments.push(slice)
       displayText += slice
     } else {
-      imageN++
-      // Canonical display form: `@blob:<id>` (no metadata). The user
-      // sees this in the composer and it's what we persist for replay.
       displayText += `@blob:${p.blobId}`
       const cached = getImageBytes(p.blobId)
       if (cached) {
-        images.push({
-          type: "image",
-          data: bytesToBase64(cached.bytes),
+        const idx = raw.length
+        raw.push({
+          blobId: p.blobId,
+          bytes: cached.bytes,
           mimeType: cached.mimeType,
         })
-        imageRefs.push({ blobId: p.blobId, mimeType: cached.mimeType })
-        // Wire form: same token plus positional + size metadata. The
-        // model uses `order` to correlate the marker with the matching
-        // image part; `size` is informational.
-        text += formatBlobMarker(p.blobId, {
-          order: imageN,
-          size: cached.bytes.byteLength,
-        })
+        fragments.push({ kind: "image-marker", index: idx })
       } else {
         // Cache miss is unexpected — the paste handler always populates
         // before adding the pill. Log loudly and emit a bare marker so
         // the wire text still references the blob id.
         console.warn(`[composer] no cached bytes for blob ${p.blobId}`)
-        text += `@blob:${p.blobId}`
+        fragments.push(`@blob:${p.blobId}`)
       }
     }
     cursor = p.to
   }
   if (cursor < state.doc.length) {
     const tail = state.doc.sliceString(cursor)
-    text += tail
+    fragments.push(tail)
     displayText += tail
+  }
+
+  // Second pass (async): downscale each image in parallel. `Promise.all`
+  // is fine here — a typical send has ≤ a handful of images and they
+  // share the same Chromium decoder pool.
+  const downscaled = await Promise.all(
+    raw.map(r => downscaleImage(r.bytes, r.mimeType)),
+  )
+
+  // Stitch the final wire text now that we know each image's post-
+  // downscale size.
+  const images: ImageContent[] = []
+  const imageRefs: { blobId: string; mimeType: string }[] = []
+  let text = ""
+  for (const f of fragments) {
+    if (typeof f === "string") {
+      text += f
+      continue
+    }
+    const r = raw[f.index]!
+    const d = downscaled[f.index]!
+    images.push({
+      type: "image",
+      data: bytesToBase64(d.bytes),
+      mimeType: d.mimeType,
+    })
+    // `imageRefs` is for persistence/replay against the blob store —
+    // keep the *original* mime so future hydration matches the bytes
+    // sitting in the cache and on disk.
+    imageRefs.push({ blobId: r.blobId, mimeType: r.mimeType })
+    text += formatBlobMarker(r.blobId, {
+      order: f.index + 1,
+      size: d.bytes.byteLength,
+    })
   }
   return { text, displayText, images, imageRefs }
 }
@@ -541,15 +576,37 @@ export function Composer({
       view.dispatch(view.state.replaceSelection("\n"))
       return true
     }
-    const payload = serializeForSubmit(view.state)
-    if (payload.text.trim().length === 0 && payload.images.length === 0) {
+    // Cheap sync guard against empty sends. A doc with whitespace +
+    // no pills is a no-op; otherwise we commit to serializing.
+    const state = view.state
+    const docText = state.doc.toString()
+    const hasPills = getPills(state).length > 0
+    if (docText.trim().length === 0 && !hasPills) {
       return true
     }
     const intent: ComposerIntent = override ?? "default"
-    onSubmitRef.current({ ...payload, intent })
+    // Clear the editor synchronously so the user sees the send fire
+    // immediately. Downscaling can take ~10–100ms for a large screen-
+    // shot; we don't want the input to feel laggy on Enter.
     view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: "" },
+      changes: { from: 0, to: state.doc.length, insert: "" },
     })
+    // Snapshot the pre-clear state so the async serializer reads the
+    // doc the user actually submitted, not the now-empty editor.
+    void (async () => {
+      try {
+        const payload = await serializeForSubmit(state)
+        if (
+          payload.text.trim().length === 0 &&
+          payload.images.length === 0
+        ) {
+          return
+        }
+        onSubmitRef.current({ ...payload, intent })
+      } catch (err) {
+        console.error("[composer] serialize failed:", err)
+      }
+    })()
     return true
   }
 
@@ -689,11 +746,30 @@ export function Composer({
       },
       ".cm-line": { padding: "0" },
       ".cm-cursor, .cm-dropCursor": { borderLeftColor: "currentColor" },
-      ".cm-selectionBackground, ::selection": {
-        backgroundColor: "var(--accent)",
+      // Use the OS's native selection color via CSS system color
+      // keywords. `var(--accent)` is a near-background grey in both
+      // light and dark themes, so the selection ends up invisible
+      // (and outright unreadable on top of plugin themes like Hume's
+      // purple). `Highlight` / `HighlightText` are the canonical
+      // platform selection colors — they always match what the user
+      // sees selecting text natively, and the OS guarantees the
+      // pairing is legible.
+      //
+      // CodeMirror draws its own selection rect at line-height via
+      // `.cm-selectionBackground`. If we also let the browser paint
+      // `::selection` on top, the glyph-band ends up a slightly
+      // different shade than the line-height rect and you get two
+      // visible stripes. Hide the native paint inside the editor so
+      // `.cm-selectionBackground` is the only selection layer.
+      ".cm-selectionBackground": {
+        backgroundColor: "Highlight !important",
       },
       "&.cm-focused .cm-selectionBackground": {
-        backgroundColor: "var(--accent)",
+        backgroundColor: "Highlight !important",
+      },
+      "::selection": {
+        backgroundColor: "transparent !important",
+        color: "inherit !important",
       },
       ".cm-fat-cursor": {
         background: "var(--foreground) !important",

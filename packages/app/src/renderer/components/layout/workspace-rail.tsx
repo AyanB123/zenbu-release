@@ -23,6 +23,12 @@ export type WorkspaceRailProps = {
   activeId: string | null
   onSelect: (id: string) => void
   onAdd?: () => void
+  /** When true, render the "+" button in its active state. Used to
+   * mark the rail's add-button as the currently selected
+   * "workspace" while the onboarding view is on screen — in that
+   * mode no real workspace is active, but the "+" *is* what's
+   * driving the center pane. */
+  addActive?: boolean
   onContextMenu?: (id: string, e: React.MouseEvent) => void
   /** Right-click on the rail background (i.e. not on a workspace
    * item). Used to show a native "Hide" menu so the user can dismiss
@@ -40,6 +46,7 @@ export function WorkspaceRail({
   activeId,
   onSelect,
   onAdd,
+  addActive = false,
   onContextMenu,
   onBackgroundContextMenu,
   footer,
@@ -100,28 +107,57 @@ export function WorkspaceRail({
           <Fragment key={ws.id}>{renderItem(ws)}</Fragment>
         ))}
         {onAdd && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onAdd}
-            aria-label="New workspace"
-            className="mt-1 h-9 w-9 border-dashed bg-transparent p-0 text-muted-foreground hover:text-foreground"
-            style={{ borderRadius: 8 }}
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+          <div className="relative mt-1">
+            {/* Left-edge accent bar, mirroring `WorkspaceRailItem`,
+             *  so the "+" lights up the same way a selected
+             *  workspace does while onboarding is the active view. */}
+            <span
+              aria-hidden
+              className="absolute"
+              style={{
+                left: -6,
+                top: 6,
+                bottom: 6,
+                width: 3,
+                borderRadius: 2,
+                background: addActive ? "var(--foreground)" : "transparent",
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onAdd}
+              aria-label="New workspace"
+              aria-pressed={addActive}
+              className={
+                "h-9 w-9 border-dashed p-0 " +
+                (addActive
+                  ? "text-foreground"
+                  : "bg-transparent text-muted-foreground hover:text-foreground")
+              }
+              style={{
+                borderRadius: 8,
+                background: addActive ? "var(--card)" : undefined,
+                boxShadow: addActive
+                  ? "0 1px 2px rgba(0, 0, 0, 0.06)"
+                  : undefined,
+              }}
             >
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-          </Button>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </Button>
+          </div>
         )}
       </div>
       {pinnedBottomWorkspaces && pinnedBottomWorkspaces.length > 0 && (

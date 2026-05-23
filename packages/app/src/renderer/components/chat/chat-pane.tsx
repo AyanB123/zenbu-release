@@ -7,6 +7,8 @@ import { materializeMessages } from "./lib/materialize"
 import { QueuedMessages } from "./queued-messages"
 import { ForkSelector } from "./fork-selector"
 import { TreeSelector } from "./tree-selector"
+import { WorkspaceSelector } from "./workspace-selector"
+import { WorktreeHandoffSelector } from "./worktree-handoff-selector"
 import { Composer, type ComposerSubmitPayload } from "../composer/composer"
 import { useChatDraft } from "./lib/use-chat-draft"
 import { AppStatusBar } from "../status-bar/app-status-bar"
@@ -104,6 +106,25 @@ export function ChatPane({
   // service publishes chunks.
   const filePaths = useDb(root =>
     chat ? root.app.fileTreeIndexes[chat.scopeId]?.paths : undefined,
+  )
+  // Worktree directory the chat is anchored at. Threaded through
+  // `materializeMessages` so the post-turn summary card knows which
+  // `directory` to forward when it opens a `git-diff` split, and so
+  // it can strip the absolute-path prefix off edit-tool args (most
+  // tools record `file_path` as an absolute path).
+  const chatDirectory = useDb(root =>
+    chat ? root.app.scopes[chat.scopeId]?.directory ?? null : null,
+  )
+  // Workspace + scope the chat owns. Threaded through to the
+  // turn-summary card so clicking a file opens the diff in *this*
+  // chat's workspace/worktree instead of whatever the window's
+  // active workspace happens to be at click time. Without this the
+  // shell falls back to `activeWorkspaceIdOf(ws)` and the diff can
+  // end up in a sibling workspace's pane state — silently teleporting
+  // the user there.
+  const chatScopeId = chat?.scopeId ?? null
+  const chatWorkspaceId = useDb(root =>
+    chat ? root.app.scopes[chat.scopeId]?.workspaceId ?? null : null,
   )
   const files = useMemo<FileEntry[]>(() => {
     if (!filePaths) return []
@@ -232,16 +253,42 @@ export function ChatPane({
       description: "fork at a user message (re-edit in a new tab)",
       action: "openFork",
     }
-    return [...sendCmds, treeCmd, forkCmd, cloneCmd, defaultCmd, lockCmd]
+    const workspaceCmd: SlashCommand = {
+      id: "workspace",
+      label: "move-to-workspace",
+      description: "move this chat into a new git worktree",
+      action: "openWorkspace",
+    }
+    const handoffCmd: SlashCommand = {
+      id: "worktree-handoff",
+      label: "worktree-handoff",
+      description:
+        "bring this worktree's commits onto another worktree's branch",
+      action: "openHandoff",
+    }
+    return [
+      ...sendCmds,
+      treeCmd,
+      forkCmd,
+      workspaceCmd,
+      handoffCmd,
+      cloneCmd,
+      defaultCmd,
+      lockCmd,
+    ]
   }, [locked, defaultSendMode])
 
-  // Tree selector panel state. Both `/tree` and `/fork` use the
-  // same component; the `mode` field controls which inline
-  // confirmation flow runs after the user picks an entry.
+  // Panel state for slash commands that take over the composer
+  // slot. `/tree` and `/fork` share the same component with
+  // different confirmation flows; `/workspace` is its own panel
+  // (branch-name input). All three render at the same DOM slot,
+  // mutually exclusive, so we model them in one union here.
   const [treePanel, setTreePanel] = useState<
     | { kind: "closed" }
     | { kind: "navigate" }
     | { kind: "fork" }
+    | { kind: "workspace" }
+    | { kind: "handoff" }
   >({ kind: "closed" })
   const treePanelOpen = treePanel.kind !== "closed"
 
@@ -255,6 +302,21 @@ export function ChatPane({
     if (action === "openFork") {
       if (!sessionId) return
       setTreePanel({ kind: "fork" })
+      return
+    }
+    if (action === "openWorkspace") {
+      // Unlike `/tree` and `/fork`, `/workspace` does NOT require a
+      // live session id — a pending chat still has a scope, and
+      // moving it before the first prompt is a sensible flow
+      // ("branch off before I start").
+      setTreePanel({ kind: "workspace" })
+      return
+    }
+    if (action === "openHandoff") {
+      // `/worktree-handoff` also works on pending chats: the source
+      // is the current chat's scope/worktree; we don't need an
+      // active session to inspect git state.
+      setTreePanel({ kind: "handoff" })
       return
     }
     if (action === "clone") {
@@ -313,8 +375,12 @@ export function ChatPane({
 
   const messages = useMemo(() => {
     if (!session) return []
-    return materializeMessages(events)
-  }, [events, session])
+    return materializeMessages(events, {
+      directory: chatDirectory,
+      workspaceId: chatWorkspaceId,
+      scopeId: chatScopeId,
+    })
+  }, [events, session, chatDirectory, chatWorkspaceId, chatScopeId])
 
   // Detector for the "sent a message, it didn't render" class of
   // bug. Calls into the renderer-side invariant store when an
@@ -406,7 +472,13 @@ export function ChatPane({
 
   const isReady = chat.session.kind === "ready" && !!session
   const streaming = isReady ? session.isStreaming : false
-  const displayMessages = isReady ? messages : materializeMessages([])
+  const displayMessages = isReady
+    ? messages
+    : materializeMessages([], {
+        directory: chatDirectory,
+        workspaceId: chatWorkspaceId,
+        scopeId: chatScopeId,
+      })
 
   const handleSubmit = async (payload: ComposerSubmitPayload) => {
     if (!isReady || !sessionId) return
@@ -630,21 +702,6 @@ export function ChatPane({
     >
       <ChatBackgroundLayer url={backgroundUrl} opacity={background?.opacity} />
       <InvariantOverlay chatId={chat.id} />
-      {!topAdjacent ? null : (
-        // Softens the hard horizontal seam between the tab strip above
-        // (plain bg-background) and the chat surface (bg-background +
-        // optional background image). A short vertical gradient from
-        // bg-background opaque → transparent makes the surface fade in
-        // from the strip rather than starting on a crisp line.
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 z-[5] h-3"
-          style={{
-            background:
-              "linear-gradient(to bottom, var(--background), transparent)",
-          }}
-        />
-      )}
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         <FileIndexContext.Provider value={files}>
         <ErrorBoundary label="Chat">
@@ -658,14 +715,72 @@ export function ChatPane({
           />
         </ErrorBoundary>
         {sessionId && <QueuedMessages sessionId={sessionId} />}
-        {sessionId && treePanelOpen ? (
+        {chat && treePanelOpen ? (
           // The selector takes the composer's slot entirely while
           // open. Putting it side-by-side made focus state
           // ambiguous ("do my keys go to the tree or the input?")
           // — swapping the surface makes it unambiguous: if you can
           // see the selector, your keys go to the selector.
+          //
+          // Outer guard is `chat` (not `sessionId`) because the
+          // `/workspace` panel works on pending chats too — it
+          // only needs the chat's scope, not a live session.
+          // `tree` / `fork` still require a sessionId and bail
+          // out below if it's missing.
           <ErrorBoundary label="Selector">
-            {treePanel.kind === "fork" ? (
+            {treePanel.kind === "workspace" ? (
+              <WorkspaceSelector
+                scopeId={chat.scopeId}
+                isStreaming={streaming}
+                onConfirm={async ({ branch, worktreePath, commitFirst }) => {
+                  try {
+                    // The RPC owns the whole move transaction:
+                    // optionally commit the source's pending
+                    // changes, then `git worktree add`, abort any
+                    // in-flight turn, dispose the live
+                    // AgentSession, and flip chat.scopeId +
+                    // session.scopeId. By the time it resolves,
+                    // the chat is parked in the new worktree and
+                    // the next prompt will re-activate pi with
+                    // the new cwd.
+                    await rpc.app.sessions.moveToNewWorktree({
+                      chatId: chat.id,
+                      branch,
+                      worktreePath,
+                      windowId,
+                      commitFirst,
+                    })
+                    setTreePanel({ kind: "closed" })
+                  } catch (err) {
+                    console.error(
+                      "[chat] moveToNewWorktree failed:",
+                      err,
+                    )
+                    // Re-throw so the selector keeps its panel
+                    // open and surfaces the error inline.
+                    throw err
+                  }
+                }}
+                onCancel={() => setTreePanel({ kind: "closed" })}
+              />
+            ) : treePanel.kind === "handoff" ? (
+              // `/worktree-handoff` panel — cross-worktree commit
+              // transfer. Source is *this* chat's scope; the panel
+              // picks the target from the same repo's worktrees.
+              // The panel handles its own multi-stage flow
+              // (pickTarget → preview/conflict → applying); the
+              // chat-pane just provides callbacks to close on
+              // success / agent-handoff.
+              <WorktreeHandoffSelector
+                chatId={chat.id}
+                sourceScopeId={chat.scopeId}
+                onCancel={() => setTreePanel({ kind: "closed" })}
+                onApplied={() => setTreePanel({ kind: "closed" })}
+                onAgentResolutionRequested={() =>
+                  setTreePanel({ kind: "closed" })
+                }
+              />
+            ) : !sessionId ? null : treePanel.kind === "fork" ? (
               <ForkSelector
                 sessionId={sessionId}
                 refreshKey={session?.lastActivityAt ?? 0}

@@ -15,13 +15,16 @@
     "lint": "eslint .",
     "ci": "pnpm run typecheck && pnpm run lint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "act": "act",
+    "ci:act": "act pull_request"
   },
   "dependencies": {
     "@zenbujs/core": "^0.0.25"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@zenbu/act": "workspace:*",
     "electron": "^42.0.0",
     "electron-builder": "^26.0.0",
     "eslint": "^10.4.0",

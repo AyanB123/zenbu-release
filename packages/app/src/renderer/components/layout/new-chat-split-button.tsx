@@ -14,6 +14,12 @@ export type NewChatSplitButtonProps = {
    * worktree of the active repo that doesn't already have one,
    * making them all appear as groups in the sidebar. */
   onImportWorktrees?: () => void
+  /** Optional. When provided (sentinel workspace only), the
+   * dropdown shows a "Create Plugin" item that opens the new-plugin
+   * dialog. We surface it only on the sentinel workspace because
+   * plugin worktrees only make sense relative to the app's own
+   * source tree. */
+  onCreatePlugin?: () => void
   /** Optional ⌘N-style shortcut hint shown under "New Chat" in the dropdown. */
   newChatShortcut?: string
 }
@@ -31,6 +37,7 @@ export function NewChatSplitButton({
   onNewChat,
   onCreateWorktree,
   onImportWorktrees,
+  onCreatePlugin,
   newChatShortcut,
 }: NewChatSplitButtonProps) {
   return (
@@ -87,6 +94,11 @@ export function NewChatSplitButton({
           {onImportWorktrees && (
             <DropdownMenuItem onSelect={onImportWorktrees}>
               Import Worktrees
+            </DropdownMenuItem>
+          )}
+          {onCreatePlugin && (
+            <DropdownMenuItem onSelect={onCreatePlugin}>
+              Create Plugin
             </DropdownMenuItem>
           )}
         </DropdownMenuContent>

@@ -51,6 +51,11 @@ export function useImportWorktrees() {
           let scopeId = byDir.get(wt.path)
           if (!scopeId) {
             scopeId = nanoid()
+            // Pin the repo's main worktree by default. This gives
+            // multi-worktree workspaces a stable anchor row at the
+            // top of the sidebar; secondary worktrees come in
+            // unpinned and sort by createdAt below it.
+            const isMain = wt.path === repo.mainWorktreePath
             root.app.scopes[scopeId] = {
               id: scopeId,
               workspaceId: workspace.id,
@@ -59,15 +64,28 @@ export function useImportWorktrees() {
               extraDirectories: [],
               createdAt: now,
               archived: false,
+              completed: false,
+              archivedAt: null,
+              completedAt: null,
+              pinnedAt: isMain ? now : null,
+              unpinnedAt: null,
             }
             byDir.set(wt.path, scopeId)
           } else {
-            // Un-archive an existing soft-hidden scope so it
-            // re-appears in the sidebar. Import is the
-            // "surface every worktree" action; archived scopes
-            // are exactly what the user wants to bring back.
+            // Un-archive / un-complete an existing soft-hidden
+            // scope so it re-appears in the sidebar. Import is
+            // the "surface every worktree" action; both
+            // archived and completed scopes are exactly what
+            // the user wants to bring back.
             const existing = root.app.scopes[scopeId]
-            if (existing?.archived) existing.archived = false
+            if (existing?.archived) {
+              existing.archived = false
+              existing.archivedAt = null
+            }
+            if (existing?.completed) {
+              existing.completed = false
+              existing.completedAt = null
+            }
           }
           if (scopesWithChats.has(scopeId)) continue
           const chatId = nanoid()

@@ -7,6 +7,7 @@ import {
 } from "react"
 import { useCollection, useDb } from "@zenbujs/core/react"
 import { useThemeSync } from "@/lib/theme"
+import { resolveActiveChatIdInAnyWindow } from "@/lib/active-chat"
 /**
  * Right-sidebar view that visualizes the pi `AgentSessionEvent` stream
  * for whichever chat is currently active. Reads
@@ -400,29 +401,18 @@ function formatTime(ts: number): string {
 }
 
 /**
- * Walks the active window's state → active workspace → active pane →
- * active tab → chat → ready session id. Returns null while no chat
- * is selected or while its session is still pending.
+ * Resolve the chat the user is working with via the shared
+ * `active-chat` resolver, then chain chat → ready session id.
+ * Returns null while no chat is selected or while its session is
+ * still pending. Using the shared resolver means the event log
+ * tracks the same chat as the agent sidebar even when the user
+ * focuses a non-chat tab in a split.
  */
 function useActiveSessionId(): string | null {
   return useDb(root => {
-    const ws = Object.values(root.app.windowStates).find(
-      s => s.selectedWorkspaceId != null,
-    )
-    if (!ws) return null
-    const workspaceId = ws.selectedWorkspaceId
-    if (!workspaceId) return null
-    const paneState = ws.workspacePanes?.[workspaceId]
-    if (!paneState) return null
-    const pane =
-      paneState.panes.find(p => p.id === paneState.activePaneId) ??
-      paneState.panes[0]
-    if (!pane) return null
-    const tab = pane.tabs.find(t => t.id === pane.activeTabId) ?? pane.tabs[0]
-    if (!tab || tab.content.kind !== "chat") return null
-    const chatId = tab.content.chatId
-    if (!chatId) return null
-    const chat = root.app.chats[chatId]
+    const found = resolveActiveChatIdInAnyWindow(root)
+    if (!found) return null
+    const chat = root.app.chats[found.chatId]
     if (!chat) return null
     return chat.session.kind === "ready" ? chat.session.sessionId : null
   })

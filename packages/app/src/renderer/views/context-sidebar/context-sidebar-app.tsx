@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { useDb } from "@zenbujs/core/react"
 import { useThemeSync } from "@/lib/theme"
+import { resolveActiveChatIdInAnyWindow } from "@/lib/active-chat"
 import type { Schema } from "../../../main/schema"
 
 type Session = Schema["sessions"][string]
@@ -297,28 +298,19 @@ function formatRelative(ts: number): string {
 
 /* -------------------------- active session walk ------------------------- */
 
-/** Same walk as pi-event-log: active window → active workspace →
- * active pane → active tab → chat → session. Null while no chat is
- * selected or the session is still pending. */
+/** Resolve the chat the user is working with via the shared
+ * `active-chat` resolver, then chain chat → ready session id.
+ * Null while no chat is selected or the session is still pending.
+ * Using the shared resolver means this view stays in lockstep with
+ * the agent sidebar / terminal / right sidebar even when the user
+ * focuses a non-chat tab (a `view` tab in a split): we fall back
+ * to a chat visible in another pane instead of just returning
+ * null. */
 function useActiveSessionId(): string | null {
   return useDb(root => {
-    const ws = Object.values(root.app.windowStates).find(
-      s => s.selectedWorkspaceId != null,
-    )
-    if (!ws) return null
-    const workspaceId = ws.selectedWorkspaceId
-    if (!workspaceId) return null
-    const paneState = ws.workspacePanes?.[workspaceId]
-    if (!paneState) return null
-    const pane =
-      paneState.panes.find(p => p.id === paneState.activePaneId) ??
-      paneState.panes[0]
-    if (!pane) return null
-    const tab = pane.tabs.find(t => t.id === pane.activeTabId) ?? pane.tabs[0]
-    if (!tab || tab.content.kind !== "chat") return null
-    const chatId = tab.content.chatId
-    if (!chatId) return null
-    const chat = root.app.chats[chatId]
+    const found = resolveActiveChatIdInAnyWindow(root)
+    if (!found) return null
+    const chat = root.app.chats[found.chatId]
     if (!chat) return null
     return chat.session.kind === "ready" ? chat.session.sessionId : null
   })

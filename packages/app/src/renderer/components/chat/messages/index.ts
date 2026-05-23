@@ -7,6 +7,7 @@ import { PermissionRequest } from "./permission-request"
 import { Plan } from "./plan"
 import { ThinkingBlock } from "./thinking-block"
 import { ToolCall } from "./tool-call"
+import { TurnSummary } from "./turn-summary"
 import { UserMessage } from "./user-message"
 
 export const defaultMessageComponents: MessageComponents = {
@@ -19,6 +20,7 @@ export const defaultMessageComponents: MessageComponents = {
   Loading,
   Interrupted,
   CloneMarker,
+  TurnSummary,
 }
 
 export {
@@ -30,5 +32,6 @@ export {
   Plan,
   ThinkingBlock,
   ToolCall,
+  TurnSummary,
   UserMessage,
 }

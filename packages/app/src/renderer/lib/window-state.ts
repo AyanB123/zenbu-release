@@ -1,6 +1,12 @@
 import { useCallback } from "react"
 import { useDb, useDbClient, useRpc } from "@zenbujs/core/react"
 import { nanoid } from "nanoid"
+import { resolveActiveChatId } from "@/lib/active-chat"
+
+// Re-export so callers can keep importing the resolver from this
+// module if it's more convenient than the standalone file. Both
+// names point at the same function.
+export { resolveActiveChatId } from "@/lib/active-chat"
 
 const DEFAULT_WINDOW_ID = "main"
 
@@ -30,8 +36,15 @@ export function useWindowState() {
 /* ============================================================ *
  * Active selection hooks
  *
- * Workspace is the primary axis. Everything else is derived:
- *   - active chat = `workspacePanes[selectedWorkspaceId]`'s active
+ * The window's center pane is described by `activeView`, a
+ * discriminated union (see schema.ts). The workspace id is
+ * inlined into the `workspace` case so it's literally not
+ * available while the user is on a non-workspace view — we don't
+ * keep a separate "last workspace" field around to be accidentally
+ * read by views that should treat the workspace as gone.
+ *
+ * Everything else is derived from the active view:
+ *   - active chat = `workspacePanes[activeWorkspaceId]`'s active
  *     pane's active tab.
  *   - active scope = `chats[activeChatId]?.scopeId`, cached in
  *     `selectedScopeId` so iframe views walking window-state can
@@ -40,9 +53,7 @@ export function useWindowState() {
 
 export function useActiveWorkspaceId(): string | null {
   const windowId = useWindowId()
-  return useDb(
-    root => root.app.windowStates[windowId]?.selectedWorkspaceId ?? null,
-  )
+  return useDb(root => activeWorkspaceIdOf(root.app.windowStates[windowId]))
 }
 
 export function useActiveScopeId(): string | null {
@@ -125,28 +136,30 @@ function pushTabContent(
  * Active chat resolution
  * ============================================================ */
 
+/**
+ * The authoritative "which chat does this window care about?"
+ * resolver lives in `lib/active-chat.ts` so iframe views can share
+ * it too. See that file for the full heuristic.
+ */
 export function useActiveChatId(): string | null {
   const windowId = useWindowId()
   return useDb(root => {
     const ws = root.app.windowStates[windowId]
     if (!ws) return null
-    const workspaceId = ws.selectedWorkspaceId
+    const workspaceId = activeWorkspaceIdOf(ws)
     if (!workspaceId) return null
-    const paneState = ws.workspacePanes?.[workspaceId]
-    if (paneState) {
-      const pane = paneState.panes.find(p => p.id === paneState.activePaneId)
-        ?? paneState.panes[0]
-      const tab = pane?.tabs.find(t => t.id === pane.activeTabId) ?? pane?.tabs[0]
-      const chatId = chatIdOf(tab)
-      if (chatId) return chatId
-    }
-    return latestChatIdInWorkspace(root, workspaceId)
+    return resolveActiveChatId(root, ws, workspaceId)
   })
 }
 
-function latestChatIdInWorkspace(root: Root, workspaceId: string): string | null {
-  // Walk scopes in the workspace, then chats in those scopes, picking
-  // the newest by createdAt. Single pass; not hot enough to index.
+function latestChatIdInWorkspace(
+  root: Root,
+  workspaceId: string,
+): string | null {
+  // Used by `ensureWorkspacePanes` to seed a brand-new pane with
+  // "the newest chat in this workspace". The richer pane-aware
+  // resolution lives in `active-chat.ts`; this is only the fallback
+  // step. Single pass over scopes + chats; not hot enough to index.
   const workspaceScopes = new Set<string>()
   for (const scope of Object.values(root.app.scopes)) {
     if (scope.workspaceId === workspaceId) workspaceScopes.add(scope.id)
@@ -203,23 +216,145 @@ function ensureWindowState(root: Root, windowId: string) {
     if (!existing.scopeLastTerminal) existing.scopeLastTerminal = {}
     if (!existing.workspacePanes) existing.workspacePanes = {}
     if (!existing.worktreeGroupCollapsed) existing.worktreeGroupCollapsed = {}
+    if (!existing.workspaceUiStates) existing.workspaceUiStates = {}
+    if (!existing.scopeUiStates) existing.scopeUiStates = {}
     return existing
   }
   root.app.windowStates[windowId] = {
-    selectedWorkspaceId: null,
     selectedScopeId: null,
     scopeLastTerminal: {},
     worktreeGroupCollapsed: {},
-    leftSidebarTab: "agent",
+    // TODO(zenbu.js): `activeView` is the start of a window-level
+    // "router" that lives in window state. As more non-workspace
+    // views show up (settings, marketplace, etc.) this union will
+    // grow, and at some point it should be formalized as a proper
+    // server-side derived router primitive in @zenbujs/core rather
+    // than a hand-rolled field in every app's schema.
+    activeView: { kind: "onboarding" },
     workspacePanes: {},
-    bottomPanelView: null,
-    leftSidebarOpen: true,
     workspaceRailOpen: true,
-    rightSidebarOpenType: null,
-    rightSidebarLastType: null,
-    bottomPanelOpen: false,
+    workspaceUiStates: {},
+    scopeUiStates: {},
   }
   return root.app.windowStates[windowId]!
+}
+
+/**
+ * Read the active workspace's UI-state record off a `windowState`
+ * snapshot, returning `null` when there's no active workspace
+ * (e.g. the onboarding view) or no record yet. Callers that want
+ * defaults applied should compose with `??` against the constants
+ * the shell exports (`DEFAULT_*`).
+ */
+type WorkspaceUiStateRecord = NonNullable<
+  Root["app"]["windowStates"][string]
+>["workspaceUiStates"][string]
+
+function readWorkspaceUiStateFromWindow(
+  ws: NonNullable<Root["app"]["windowStates"][string]> | undefined,
+): WorkspaceUiStateRecord | null {
+  if (!ws) return null
+  const workspaceId = activeWorkspaceIdOf(ws)
+  if (!workspaceId) return null
+  return ws.workspaceUiStates?.[workspaceId] ?? null
+}
+
+/**
+ * Materialize the active workspace's UI-state entry inside a
+ * `client.update(...)` callback, creating it (with shell defaults)
+ * if the workspace has never had one. Returns `null` when there's
+ * no active workspace — callers should treat that as a no-op so
+ * panel toggles fired in onboarding mode don't accidentally write
+ * to the wrong place.
+ */
+function ensureActiveWorkspaceUiState(
+  ws: NonNullable<Root["app"]["windowStates"][string]>,
+): WorkspaceUiStateRecord | null {
+  const workspaceId = activeWorkspaceIdOf(ws)
+  if (!workspaceId) return null
+  let entry = ws.workspaceUiStates[workspaceId]
+  if (!entry) {
+    entry = {
+      sidebarWidth: null,
+      leftSidebarOpen: true,
+      leftSidebarTab: "agent",
+    }
+    ws.workspaceUiStates[workspaceId] = entry
+  }
+  return entry
+}
+
+type ScopeUiStateRecord = NonNullable<
+  Root["app"]["windowStates"][string]
+>["scopeUiStates"][string]
+
+/**
+ * Read the active scope's UI-state record off a `windowState`
+ * snapshot. Returns `null` when there's no active scope or no
+ * record yet; callers fall back to shell defaults in that case.
+ *
+ * Active scope = `windowState.selectedScopeId`, kept in sync by
+ * the pane/tab helpers as the active chat moves between scopes
+ * (worktrees).
+ */
+function readScopeUiStateFromWindow(
+  ws: NonNullable<Root["app"]["windowStates"][string]> | undefined,
+): ScopeUiStateRecord | null {
+  if (!ws) return null
+  const scopeId = ws.selectedScopeId
+  if (!scopeId) return null
+  return ws.scopeUiStates?.[scopeId] ?? null
+}
+
+/**
+ * Materialize the active scope's UI-state entry inside an
+ * `update(...)` callback. Returns `null` when there's no active
+ * scope (e.g. a workspace that hasn't opened any chat yet), in
+ * which case writes should be skipped — the panel will still
+ * render off defaults until a scope is selected.
+ */
+function ensureActiveScopeUiState(
+  ws: NonNullable<Root["app"]["windowStates"][string]>,
+): ScopeUiStateRecord | null {
+  const scopeId = ws.selectedScopeId
+  if (!scopeId) return null
+  let entry = ws.scopeUiStates[scopeId]
+  if (!entry) {
+    entry = {
+      rightSidebarWidth: null,
+      terminalHeight: null,
+      bottomPanelOpen: false,
+      bottomPanelView: null,
+      rightSidebarOpenType: null,
+      rightSidebarLastType: null,
+    }
+    ws.scopeUiStates[scopeId] = entry
+  }
+  return entry
+}
+
+/** Pull the active workspace id out of the `activeView` discriminated
+ * union, or `null` when the window isn't showing a workspace (e.g.
+ * onboarding). Use this everywhere instead of looking at
+ * `activeView.workspaceId` directly so we never narrow the wrong
+ * case. */
+export function activeWorkspaceIdOf(
+  ws: { activeView: { kind: string; workspaceId?: string } } | null | undefined,
+): string | null {
+  if (!ws) return null
+  return ws.activeView.kind === "workspace" && ws.activeView.workspaceId
+    ? ws.activeView.workspaceId
+    : null
+}
+
+/** Mutate `ws.activeView` to focus a workspace. Centralizes the
+ * shape of the workspace case so callers don't have to spell out
+ * the discriminator every time. */
+function setActiveWorkspace(
+  ws: { activeView: any },
+  workspaceId: string,
+): void {
+  ws.activeView = { kind: "workspace", workspaceId }
 }
 
 /**
@@ -266,8 +401,17 @@ function getActivePane(
 
 /**
  * After any mutation that changes which tab is active, recompute
- * `selectedScopeId` from the new active tab's chat. Keeps the iframe-
- * visible cache in sync with the workspace-scoped pane state.
+ * `selectedScopeId` from whichever chat the window is now
+ * effectively pointing at. Routes through `resolveActiveChatId`
+ * so the iframe-visible cache stays in lockstep with the agent
+ * sidebar — if you focus a non-chat tab in a split, both the
+ * sidebar's tracked chat *and* the terminal/right-sidebar scope
+ * fall back to the same chat visible in the other pane, instead
+ * of disagreeing with each other.
+ *
+ * Final fallback to `workspacePrimaryScopeId` is reached only
+ * when the workspace genuinely has no chats yet — we still want
+ * a usable directory for the commit button, terminals, etc.
  */
 function refreshSelectedScope(
   root: Root,
@@ -276,11 +420,7 @@ function refreshSelectedScope(
 ): void {
   const ws = root.app.windowStates[windowId]
   if (!ws) return
-  const state = ws.workspacePanes?.[workspaceId]
-  if (!state) return
-  const pane = state.panes.find(p => p.id === state.activePaneId) ?? state.panes[0]
-  const tab = pane?.tabs.find(t => t.id === pane.activeTabId) ?? pane?.tabs[0]
-  const chatId = chatIdOf(tab)
+  const chatId = resolveActiveChatId(root, ws, workspaceId)
   if (chatId) {
     const chat = root.app.chats[chatId]
     if (chat) {
@@ -288,9 +428,6 @@ function refreshSelectedScope(
       return
     }
   }
-  // No usable active chat — fall back to the workspace's primary
-  // scope so consumers (commit button, sidebar args, etc.) still
-  // have a meaningful directory to operate against.
   ws.selectedScopeId = workspacePrimaryScopeId(root, workspaceId)
 }
 
@@ -317,7 +454,11 @@ export function selectWorkspaceInRoot(
   workspaceId: string,
 ): void {
   const ws = ensureWindowState(root, windowId)
-  ws.selectedWorkspaceId = workspaceId
+  // The workspace id lives *inside* `activeView` — setting it
+  // here is what both "selects a workspace" and "exits any
+  // non-workspace view" mean at the same time, so there's no
+  // window state where one is set without the other.
+  setActiveWorkspace(ws, workspaceId)
   ensureWorkspacePanes(root, windowId, workspaceId)
   refreshSelectedScope(root, windowId, workspaceId)
 }
@@ -340,7 +481,11 @@ export function selectChatInRoot(
   const scope = root.app.scopes[chat.scopeId]
   if (!scope) return
   const ws = ensureWindowState(root, windowId)
-  ws.selectedWorkspaceId = scope.workspaceId
+  // Focusing a chat implicitly returns the window to a workspace
+  // view (the one owning the chat). Used by
+  // `useCreateWorkspaceFromDirectory` to land back on the new
+  // workspace after the user finishes onboarding.
+  setActiveWorkspace(ws, scope.workspaceId)
   const state = ensureWorkspacePanes(root, windowId, scope.workspaceId)
 
   // 1. Tab already exists?
@@ -387,9 +532,7 @@ export function focusPaneShowingChatInRoot(
   const scope = root.app.scopes[chat.scopeId]
   if (!scope) return false
   const ws = ensureWindowState(root, windowId)
-  if (ws.selectedWorkspaceId !== scope.workspaceId) {
-    ws.selectedWorkspaceId = scope.workspaceId
-  }
+  setActiveWorkspace(ws, scope.workspaceId)
   const state = ws.workspacePanes?.[scope.workspaceId]
   if (!state) return false
   for (const pane of state.panes) {
@@ -634,7 +777,7 @@ export function openChatInNewTabInRoot(
   const scope = root.app.scopes[chat.scopeId]
   if (!scope) return
   const ws = ensureWindowState(root, windowId)
-  ws.selectedWorkspaceId = scope.workspaceId
+  setActiveWorkspace(ws, scope.workspaceId)
   const state = ensureWorkspacePanes(root, windowId, scope.workspaceId)
   const paneIdx = state.panes.findIndex(p => p.id === state.activePaneId)
   const targetIdx = paneIdx >= 0 ? paneIdx : 0
@@ -659,7 +802,7 @@ export function openChatInNewPaneInRoot(
   const scope = root.app.scopes[chat.scopeId]
   if (!scope) return
   const ws = ensureWindowState(root, windowId)
-  ws.selectedWorkspaceId = scope.workspaceId
+  setActiveWorkspace(ws, scope.workspaceId)
   const state = ensureWorkspacePanes(root, windowId, scope.workspaceId)
   const paneId = nanoid()
   const tabId = nanoid()
@@ -701,7 +844,7 @@ export type SplitPaneResult =
 function getActiveContext(root: Root, windowId: string) {
   const ws = root.app.windowStates[windowId]
   if (!ws) return null
-  const workspaceId = ws.selectedWorkspaceId
+  const workspaceId = activeWorkspaceIdOf(ws)
   if (!workspaceId) return null
   const state = ensureWorkspacePanes(root, windowId, workspaceId)
   const activePane =
@@ -987,16 +1130,19 @@ export function useSelectTerminal() {
   )
 }
 
-export type LeftSidebarTab = "agent" | "pi-sessions"
+export type LeftSidebarTab = "agent" | "pi-sessions" | "extra-dirs"
 
 export function useLeftSidebarTab(): LeftSidebarTab {
   const windowId = useWindowId()
   return useDb(root => {
-    const raw = root.app.windowStates[windowId]?.leftSidebarTab
+    const ws = root.app.windowStates[windowId]
+    const raw = readWorkspaceUiStateFromWindow(ws)?.leftSidebarTab
     // Defensive: legacy windows may carry the dropped "scopes" value
     // until the migration runs; fall back to "agent" so the renderer
     // never tries to render a non-existent tab body.
-    if (raw === "agent" || raw === "pi-sessions") return raw
+    if (raw === "agent" || raw === "pi-sessions" || raw === "extra-dirs") {
+      return raw
+    }
     return "agent"
   })
 }
@@ -1008,7 +1154,9 @@ export function useSetLeftSidebarTab() {
     (tab: LeftSidebarTab) => {
       void client.update(root => {
         const ws = ensureWindowState(root, windowId)
-        ws.leftSidebarTab = tab
+        const ui = ensureActiveWorkspaceUiState(ws)
+        if (!ui) return
+        ui.leftSidebarTab = tab
       })
     },
     [client, windowId],
@@ -1044,9 +1192,10 @@ export function useToggleWorktreeGroupCollapsed() {
 
 export function useBottomPanelView(): string | null {
   const windowId = useWindowId()
-  return useDb(
-    root => root.app.windowStates[windowId]?.bottomPanelView ?? null,
-  )
+  return useDb(root => {
+    const ws = root.app.windowStates[windowId]
+    return readScopeUiStateFromWindow(ws)?.bottomPanelView ?? null
+  })
 }
 
 export function useSetBottomPanelView() {
@@ -1056,7 +1205,9 @@ export function useSetBottomPanelView() {
     (viewType: string | null) => {
       void client.update(root => {
         const ws = ensureWindowState(root, windowId)
-        ws.bottomPanelView = viewType
+        const ui = ensureActiveScopeUiState(ws)
+        if (!ui) return
+        ui.bottomPanelView = viewType
       })
     },
     [client, windowId],
@@ -1067,9 +1218,10 @@ export function useSetBottomPanelView() {
 
 export function useLeftSidebarOpen(): boolean {
   const windowId = useWindowId()
-  return useDb(
-    root => root.app.windowStates[windowId]?.leftSidebarOpen ?? true,
-  )
+  return useDb(root => {
+    const ws = root.app.windowStates[windowId]
+    return readWorkspaceUiStateFromWindow(ws)?.leftSidebarOpen ?? true
+  })
 }
 
 export function useSetLeftSidebarOpen() {
@@ -1079,12 +1231,51 @@ export function useSetLeftSidebarOpen() {
     (open: boolean | ((prev: boolean) => boolean)) => {
       void client.update(root => {
         const ws = ensureWindowState(root, windowId)
-        const prev = ws.leftSidebarOpen ?? true
-        ws.leftSidebarOpen = typeof open === "function" ? open(prev) : open
+        const ui = ensureActiveWorkspaceUiState(ws)
+        if (!ui) return
+        const prev = ui.leftSidebarOpen ?? true
+        ui.leftSidebarOpen = typeof open === "function" ? open(prev) : open
       })
     },
     [client, windowId],
   )
+}
+
+/* ============================================================ *
+ * activeView (window-level "router")
+ *
+ * Tracks what the center pane is showing right now. The schema
+ * makes this a discriminated union so the workspace id can only
+ * be observed when the workspace view is actually showing — no
+ * "last workspace" leaking into onboarding or future settings
+ * pages.
+ *
+ * TODO(zenbu.js): formalize this as a proper server-side derived
+ * router primitive in core.
+ * ============================================================ */
+
+export type ActiveView =
+  | { kind: "workspace"; workspaceId: string }
+  | { kind: "onboarding" }
+
+export function useActiveView(): ActiveView {
+  const windowId = useWindowId()
+  return useDb(
+    root =>
+      (root.app.windowStates[windowId]?.activeView as ActiveView | undefined)
+        ?? { kind: "onboarding" },
+  )
+}
+
+export function useShowOnboardingView() {
+  const windowId = useWindowId()
+  const client = useDbClient()
+  return useCallback(() => {
+    void client.update(root => {
+      const ws = ensureWindowState(root, windowId)
+      ws.activeView = { kind: "onboarding" }
+    })
+  }, [client, windowId])
 }
 
 export function useWorkspaceRailOpen(): boolean {
@@ -1111,16 +1302,18 @@ export function useSetWorkspaceRailOpen() {
 
 export function useRightSidebarOpenType(): string | null {
   const windowId = useWindowId()
-  return useDb(
-    root => root.app.windowStates[windowId]?.rightSidebarOpenType ?? null,
-  )
+  return useDb(root => {
+    const ws = root.app.windowStates[windowId]
+    return readScopeUiStateFromWindow(ws)?.rightSidebarOpenType ?? null
+  })
 }
 
 export function useRightSidebarLastType(): string | null {
   const windowId = useWindowId()
-  return useDb(
-    root => root.app.windowStates[windowId]?.rightSidebarLastType ?? null,
-  )
+  return useDb(root => {
+    const ws = root.app.windowStates[windowId]
+    return readScopeUiStateFromWindow(ws)?.rightSidebarLastType ?? null
+  })
 }
 
 export function useSetRightSidebarOpenType() {
@@ -1130,8 +1323,10 @@ export function useSetRightSidebarOpenType() {
     (type: string | null) => {
       void client.update(root => {
         const ws = ensureWindowState(root, windowId)
-        ws.rightSidebarOpenType = type
-        if (type != null) ws.rightSidebarLastType = type
+        const ui = ensureActiveScopeUiState(ws)
+        if (!ui) return
+        ui.rightSidebarOpenType = type
+        if (type != null) ui.rightSidebarLastType = type
       })
     },
     [client, windowId],
@@ -1140,9 +1335,10 @@ export function useSetRightSidebarOpenType() {
 
 export function useBottomPanelOpen(): boolean {
   const windowId = useWindowId()
-  return useDb(
-    root => root.app.windowStates[windowId]?.bottomPanelOpen ?? false,
-  )
+  return useDb(root => {
+    const ws = root.app.windowStates[windowId]
+    return readScopeUiStateFromWindow(ws)?.bottomPanelOpen ?? false
+  })
 }
 
 export function useSetBottomPanelOpen() {
@@ -1152,8 +1348,97 @@ export function useSetBottomPanelOpen() {
     (open: boolean | ((prev: boolean) => boolean)) => {
       void client.update(root => {
         const ws = ensureWindowState(root, windowId)
-        const prev = ws.bottomPanelOpen ?? false
-        ws.bottomPanelOpen = typeof open === "function" ? open(prev) : open
+        const ui = ensureActiveScopeUiState(ws)
+        if (!ui) return
+        const prev = ui.bottomPanelOpen ?? false
+        ui.bottomPanelOpen = typeof open === "function" ? open(prev) : open
+      })
+    },
+    [client, windowId],
+  )
+}
+
+/* ----------------------------- workspace layout ------------------------- */
+
+/**
+ * Combined sash-size view used by the shell. The three sizes
+ * are sourced from two different records so the hook abstracts
+ * over that detail:
+ *
+ *   - `sidebarWidth` lives on the per-workspace UI state, since
+ *     the left sidebar is a workspace-wide surface (chat list).
+ *   - `rightSidebarWidth` and `terminalHeight` live on the
+ *     per-scope UI state, since the right sidebar and bottom
+ *     panel already render scope-parameterized content.
+ *
+ * `null` for any field means "never saved; fall back to the
+ * shell default".
+ */
+export type WorkspaceLayoutView = {
+  sidebarWidth: number | null
+  rightSidebarWidth: number | null
+  terminalHeight: number | null
+}
+
+const EMPTY_WORKSPACE_LAYOUT: WorkspaceLayoutView = {
+  sidebarWidth: null,
+  rightSidebarWidth: null,
+  terminalHeight: null,
+}
+
+export function useWorkspaceLayout(): WorkspaceLayoutView {
+  const windowId = useWindowId()
+  return useDb(root => {
+    const ws = root.app.windowStates[windowId]
+    if (!ws) return EMPTY_WORKSPACE_LAYOUT
+    const wsUi = readWorkspaceUiStateFromWindow(ws)
+    const scopeUi = readScopeUiStateFromWindow(ws)
+    return {
+      sidebarWidth: wsUi?.sidebarWidth ?? null,
+      rightSidebarWidth: scopeUi?.rightSidebarWidth ?? null,
+      terminalHeight: scopeUi?.terminalHeight ?? null,
+    }
+  })
+}
+
+/**
+ * Writer for the shell's saved sizes. Patches are routed based
+ * on key:
+ *
+ *   - `sidebarWidth` lands on the active workspace's UI state.
+ *   - `rightSidebarWidth` and `terminalHeight` land on the
+ *     active scope's UI state.
+ *
+ * Calling with a key whose target record isn't materializable
+ * (no active workspace / no active scope) is a no-op for that
+ * key. The other keys in the same patch still apply if their
+ * own target is reachable.
+ */
+export function useSetWorkspaceLayout() {
+  const windowId = useWindowId()
+  const client = useDbClient()
+  return useCallback(
+    (patch: Partial<WorkspaceLayoutView>) => {
+      void client.update(root => {
+        const ws = ensureWindowState(root, windowId)
+        if (patch.sidebarWidth !== undefined) {
+          const wsUi = ensureActiveWorkspaceUiState(ws)
+          if (wsUi) wsUi.sidebarWidth = patch.sidebarWidth
+        }
+        if (
+          patch.rightSidebarWidth !== undefined ||
+          patch.terminalHeight !== undefined
+        ) {
+          const scopeUi = ensureActiveScopeUiState(ws)
+          if (scopeUi) {
+            if (patch.rightSidebarWidth !== undefined) {
+              scopeUi.rightSidebarWidth = patch.rightSidebarWidth
+            }
+            if (patch.terminalHeight !== undefined) {
+              scopeUi.terminalHeight = patch.terminalHeight
+            }
+          }
+        }
       })
     },
     [client, windowId],
@@ -1203,7 +1488,7 @@ export function useWorkspacePanes(): WorkspacePaneStateView | null {
   return useDb(root => {
     const ws = root.app.windowStates[windowId]
     if (!ws) return null
-    const workspaceId = ws.selectedWorkspaceId
+    const workspaceId = activeWorkspaceIdOf(ws)
     if (!workspaceId) return null
     return ws.workspacePanes?.[workspaceId] ?? null
   })
@@ -1416,7 +1701,7 @@ export function openViewInRoot(
 ): boolean {
   const ws = root.app.windowStates[windowId]
   if (!ws) return false
-  const workspaceId = ws.selectedWorkspaceId
+  const workspaceId = activeWorkspaceIdOf(ws)
   if (!workspaceId) return false
   const state = ensureWorkspacePanes(root, windowId, workspaceId)
   const activePane =
@@ -1483,7 +1768,7 @@ export function openViewBySourceInRoot(
 ): boolean {
   const ws = root.app.windowStates[windowId]
   if (!ws) return false
-  const workspaceId = ws.selectedWorkspaceId
+  const workspaceId = activeWorkspaceIdOf(ws)
   if (!workspaceId) return false
   const state = ensureWorkspacePanes(root, windowId, workspaceId)
 
@@ -1517,6 +1802,83 @@ export function openViewBySourceInRoot(
   state.panes = [...state.panes, newPane]
   state.activePaneId = paneId
   refreshSelectedScope(root, windowId, workspaceId)
+  return true
+}
+
+/**
+ * Variant of `openViewBySourceInRoot` that takes the workspace +
+ * scope as explicit inputs instead of inferring them from the
+ * window's active view. Used by events that carry their own
+ * routing context (e.g. `openDiffInActivePane`, fired by
+ * turn-summary cards that know exactly which chat — and therefore
+ * which workspace + scope — they belong to).
+ *
+ * Differences from the source-only variant:
+ *
+ *   - Switches `activeView` to the target workspace before
+ *     mutating its pane state, so a click from one workspace can
+ *     pop a diff in the *other* workspace without forcing the user
+ *     to navigate there first by hand.
+ *   - Pins `selectedScopeId` to the caller-supplied `scopeId`
+ *     instead of running `refreshSelectedScope`. The new diff tab
+ *     has no `chatId`, so the default refresh would drop us into
+ *     the workspace's *primary* scope — yanking the user out of
+ *     the worktree the chat actually lives in. Pinning the scope
+ *     keeps the sidebar / commit button / status bar aligned with
+ *     the chat that triggered the diff.
+ */
+export function openViewBySourceInWorkspaceInRoot(
+  root: Root,
+  windowId: string,
+  workspaceId: string,
+  scopeId: string | null,
+  viewType: string,
+  source: string,
+  args: Record<string, unknown> = {},
+): boolean {
+  if (!root.app.workspaces[workspaceId]) return false
+  const ws = ensureWindowState(root, windowId)
+  setActiveWorkspace(ws, workspaceId)
+  const state = ensureWorkspacePanes(root, windowId, workspaceId)
+
+  const taggedArgs = { ...args, [VIEW_SOURCE_KEY]: source }
+  const tabContent = { kind: "view" as const, viewType, args: taggedArgs }
+
+  let placed = false
+  outer: for (let pIdx = 0; pIdx < state.panes.length; pIdx++) {
+    const pane = state.panes[pIdx]!
+    for (let tIdx = 0; tIdx < pane.tabs.length; tIdx++) {
+      const tab = pane.tabs[tIdx]!
+      if (tab.content.kind !== "view") continue
+      const tagged = tab.content.args?.[VIEW_SOURCE_KEY]
+      if (tagged !== source) continue
+      const nextTabs = pane.tabs.slice()
+      nextTabs[tIdx] = pushTabContent(tab, tabContent)
+      state.panes[pIdx] = { ...pane, tabs: nextTabs, activeTabId: tab.id }
+      state.activePaneId = pane.id
+      placed = true
+      break outer
+    }
+  }
+
+  if (!placed) {
+    if (state.panes.length === 0) return false
+    const paneId = nanoid()
+    const tabId = nanoid()
+    const newPane = {
+      id: paneId,
+      tabs: [makeTab(tabId, tabContent)],
+      activeTabId: tabId,
+    }
+    state.panes = [...state.panes, newPane]
+    state.activePaneId = paneId
+  }
+
+  if (scopeId && root.app.scopes[scopeId]) {
+    ws.selectedScopeId = scopeId
+  } else {
+    refreshSelectedScope(root, windowId, workspaceId)
+  }
   return true
 }
 

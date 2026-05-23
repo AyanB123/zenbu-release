@@ -41,13 +41,82 @@ type ToolStatus = "pending" | "running" | "completed" | "failed"
  */
 export function materializeMessages(
   events: EventItem[],
+  options: {
+    directory?: string | null
+    workspaceId?: string | null
+    scopeId?: string | null
+  } = {},
 ): MaterializedMessage[] {
+  const directory = options.directory ?? null
+  const workspaceId = options.workspaceId ?? null
+  const scopeId = options.scopeId ?? null
   const out: MaterializedMessage[] = []
   // Running 0-based index of user messages encountered. Stamped on
   // each materialized user message so the renderer can look up the
   // matching pi entry id when forking-from-edit. Reset on each call
   // since we always re-materialize from the head of the event log.
   let userIdx = 0
+
+  // Per-turn file-edit aggregator for the post-turn summary card.
+  // Reset on every `user_prompt` (so each turn gets its own card),
+  // appended into a `turn_summary` materialized block on every
+  // `agent_end`. We use an array + an index map so the card lists
+  // files in the order they were first edited (more readable than
+  // dictionary iteration order, and stable across re-renders).
+  type TurnFileEntry = {
+    path: string
+    editCount: number
+    op: "create" | "edit"
+    additions: number
+    removals: number
+  }
+  let turnFiles: TurnFileEntry[] = []
+  let turnFileIdx = new Map<string, number>()
+  // Map of in-flight edit/write tool calls — we only attribute the
+  // edit to the file when `tool_execution_end` reports success, so
+  // failed edits don't pollute the summary. Keyed by `toolCallId`.
+  // `op` captures which tool started the call so the per-file
+  // operation kind on the summary card matches what actually ran.
+  // `createdLines` is pre-computed for `write` from the args at
+  // start time (the result doesn't carry it) and used as the
+  // additions count on success.
+  const pendingEdits = new Map<
+    string,
+    { path: string; op: "create" | "edit"; createdLines: number }
+  >()
+  const recordEdit = (
+    rawPath: string,
+    op: "create" | "edit",
+    additions: number,
+    removals: number,
+  ) => {
+    const normalized = normalizeEditPath(rawPath, directory)
+    const existing = turnFileIdx.get(normalized)
+    if (existing != null) {
+      const prev = turnFiles[existing]!
+      turnFiles[existing] = {
+        ...prev,
+        editCount: prev.editCount + 1,
+        // First op wins: a file created this turn stays "created"
+        // even if the agent edits it again before turn end, because
+        // the dominant user-facing action is the creation. A file
+        // that was edited first never gets reclassified as created
+        // (you can't really un-create something the agent already
+        // started editing).
+        additions: prev.additions + additions,
+        removals: prev.removals + removals,
+      }
+      return
+    }
+    turnFileIdx.set(normalized, turnFiles.length)
+    turnFiles.push({
+      path: normalized,
+      editCount: 1,
+      op,
+      additions,
+      removals,
+    })
+  }
 
   // Tracks the most recent assistant `message_start` that has not yet
   // been closed by a `message_end`. While this is non-null, the
@@ -76,6 +145,12 @@ export function materializeMessages(
           key: `user-${event.seq}`,
           userMessageIndex: userIdx++,
         })
+        // Start of a new turn from the user's side. Reset the
+        // file-edit aggregator so the next agent_end's turn_summary
+        // only reflects edits made for this prompt.
+        turnFiles = []
+        turnFileIdx = new Map()
+        pendingEdits.clear()
         break
       }
       case "message_start": {
@@ -138,6 +213,20 @@ export function materializeMessages(
         const id = payload?.toolCallId ?? `tool-${event.seq}`
         const toolName = payload?.toolName
         const args = payload?.args
+        const opKind = editOpKind(toolName)
+        if (opKind) {
+          const filePath = pickEditPath(args)
+          if (filePath) {
+            // For `write` we need the line count of the content
+            // payload — it's only present in args, not in the
+            // result — so we snapshot it here. `edit` figures its
+            // diff stats out from the result on success, so we
+            // pass 0 and overwrite at end time.
+            const createdLines =
+              opKind === "create" ? lineCountOfWriteArgs(args) : 0
+            pendingEdits.set(id, { path: filePath, op: opKind, createdLines })
+          }
+        }
         out.push({
           role: "tool",
           toolCallId: id,
@@ -166,6 +255,30 @@ export function materializeMessages(
         const id = payload?.toolCallId
         if (!id) break
         const status: ToolStatus = payload?.isError ? "failed" : "completed"
+        const pending = pendingEdits.get(id)
+        if (pending) {
+          pendingEdits.delete(id)
+          if (!payload?.isError) {
+            // Stats source depends on which tool ran:
+            //   - write: pre-computed line count from args.content.
+            //     Every line is an addition (the file didn't exist),
+            //     removals stay 0.
+            //   - edit: parse the unified diff out of the tool
+            //     result, run the same unique-line tally the inline
+            //     EditCard uses so the badges match what the user
+            //     sees in the tool call above.
+            let additions = 0
+            let removals = 0
+            if (pending.op === "create") {
+              additions = pending.createdLines
+            } else {
+              const stats = editDiffStatsFromResult(payload?.result)
+              additions = stats.additions
+              removals = stats.removals
+            }
+            recordEdit(pending.path, pending.op, additions, removals)
+          }
+        }
         for (let k = out.length - 1; k >= 0; k--) {
           const m = out[k]
           if (m.role === "tool" && m.toolCallId === id) {
@@ -188,6 +301,35 @@ export function materializeMessages(
       case "interrupted":
       case "turn_interrupted": {
         out.push({ role: "interrupted", key: `interrupted-${event.seq}` })
+        break
+      }
+      case "agent_end": {
+        // End of a turn. If pi wrote / edited any files since the
+        // previous user_prompt, drop a `turn_summary` block here so
+        // the chat renders the post-turn "what changed" card right
+        // below the assistant's last message. We snapshot the
+        // current aggregator into a fresh array so any *future*
+        // turn's edits (after the user replies) don't mutate this
+        // card by reference.
+        if (turnFiles.length > 0) {
+          out.push({
+            role: "turn_summary",
+            files: turnFiles.slice(),
+            directory,
+            workspaceId,
+            scopeId,
+            key: `turn-summary-${event.seq}`,
+          })
+        }
+        // Reset the aggregator so a follow-up agent_end inside the
+        // same user prompt (rare — agent retries / sub-runs) emits
+        // a fresh card with only the newly-edited files rather than
+        // double-counting what the prior card already showed. The
+        // user_prompt branch also clears on the *next* prompt, so
+        // either way each card is "edits since the last summary or
+        // user message, whichever came last".
+        turnFiles = []
+        turnFileIdx = new Map()
         break
       }
       case "cloned_from":
@@ -377,6 +519,89 @@ function pickString(
     if (typeof v === "string") return v
   }
   return null
+}
+
+/**
+ * Classify a tool as a file-modifying op, returning the user-facing
+ * kind for the summary card or `null` if it doesn't modify a file.
+ * `write` creates (or overwrites) a file from scratch; `edit`
+ * applies a patch to an existing one. `bash` is intentionally
+ * excluded — it can also touch files but pi's event log doesn't
+ * tell us which ones, so we'd end up with empty cards or false
+ * negatives.
+ */
+function editOpKind(
+  name: string | undefined,
+): "create" | "edit" | null {
+  const n = (name ?? "").toLowerCase()
+  if (n === "write") return "create"
+  if (n === "edit") return "edit"
+  return null
+}
+
+/** Mirror of WriteCard's lineCount: the `write` tool body lives in
+ * `content` (some SDK variants spell it `contents`). Empty payload
+ * → 0, matching the inline card so the badge stays hidden in that
+ * edge case. */
+function lineCountOfWriteArgs(args: unknown): number {
+  if (!args || typeof args !== "object") return 0
+  const a = args as Record<string, unknown>
+  const content = typeof a.content === "string" ? a.content : a.contents
+  if (typeof content !== "string" || content.length === 0) return 0
+  return content.split("\n").length
+}
+
+/** Mirror of countDiffLines + splitUnifiedDiff from tool-call-card.
+ * Pulls the unified diff out of `result.details.diff` (same place
+ * EditCard reads it), then tallies unique additions / removals by
+ * line so a pure reformat doesn't double-count. Returns zeroes
+ * when the SDK didn't stamp a diff onto the result. */
+function editDiffStatsFromResult(
+  result: unknown,
+): { additions: number; removals: number } {
+  if (!result || typeof result !== "object") return { additions: 0, removals: 0 }
+  const r = result as Record<string, unknown>
+  const details = r.details as Record<string, unknown> | undefined
+  const diff = typeof details?.diff === "string" ? details.diff : undefined
+  if (!diff) return { additions: 0, removals: 0 }
+  const { oldText, newText } = splitUnifiedDiff(diff)
+  const oldLines = oldText ? oldText.split("\n") : []
+  const newLines = newText ? newText.split("\n") : []
+  const oldSet = new Set(oldLines)
+  const newSet = new Set(newLines)
+  let additions = 0
+  let removals = 0
+  for (const line of newLines) if (!oldSet.has(line)) additions++
+  for (const line of oldLines) if (!newSet.has(line)) removals++
+  return { additions, removals }
+}
+
+function pickEditPath(args: unknown): string | null {
+  if (!args || typeof args !== "object") return null
+  return pickString(args as Record<string, unknown>, [
+    "file_path",
+    "path",
+    "filePath",
+  ])
+}
+
+/**
+ * Edit tool args usually carry an absolute path (claude-code
+ * convention), but git status / the diff viewer want
+ * worktree-relative paths. If the path lives inside `directory`,
+ * strip the prefix; otherwise leave it as-is so we don't fabricate
+ * a relative path that points nowhere.
+ */
+function normalizeEditPath(
+  filePath: string,
+  directory: string | null,
+): string {
+  if (!directory) return filePath
+  const dir = directory.endsWith("/") ? directory.slice(0, -1) : directory
+  if (filePath === dir) return filePath
+  const prefix = dir + "/"
+  if (filePath.startsWith(prefix)) return filePath.slice(prefix.length)
+  return filePath
 }
 
 function splitUnifiedDiff(diff: string): {

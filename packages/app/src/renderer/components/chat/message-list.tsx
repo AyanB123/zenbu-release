@@ -413,6 +413,13 @@ function MessageRow({
         />
       )
     case "turn_summary":
-      return null
+      return (
+        <C.TurnSummary
+          files={message.files}
+          directory={message.directory}
+          workspaceId={message.workspaceId}
+          scopeId={message.scopeId}
+        />
+      )
   }
 }

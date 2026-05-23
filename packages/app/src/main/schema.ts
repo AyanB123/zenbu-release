@@ -73,6 +73,55 @@ const scope = z.object({
    * the user can bring a hidden worktree back without manual
    * cleanup. */
   archived: z.boolean().default(false),
+  /** "Completed" flag. Mirrors `archived` semantically (hides the
+   * worktree from the sidebar without destroying any data) but
+   * carries a different intent: archive = "shelve, I'm done with
+   * this for now", completed = "this work is finished, ship it".
+   * A scope can be archived OR completed; the sidebar's
+   * archive-or-completed footer menu treats them as two parallel
+   * buckets and lets the user toggle either flag back to false to
+   * bring the worktree back. */
+  completed: z.boolean().default(false),
+  /** Wall-clock time (unix ms) the user most recently archived
+   * this scope, or `null` if it isn't archived. Cleared back to
+   * null when the scope is un-archived. Kept alongside the boolean
+   * flag so the footer popover can sort archived worktrees by
+   * most-recently-archived without paying a full session/chat
+   * lookup, and so future UI can group them by day/week. */
+  archivedAt: z.number().nullable().default(null),
+  /** Wall-clock time (unix ms) the user most recently marked this
+   * scope as completed, or `null` if it isn't completed. Same
+   * lifetime rules as `archivedAt`. */
+  completedAt: z.number().nullable().default(null),
+  /** Wall-clock time (unix ms) the scope was most recently pinned
+   * to the top of the worktree-group sidebar, or `null` if it
+   * isn't pinned. Multiple scopes can be pinned simultaneously;
+   * the sidebar sorts them by `pinnedAt` descending (most
+   * recently pinned first). The "main" worktree (the one whose
+   * directory matches its repo's `mainWorktreePath`) is pinned
+   * automatically the first time it materializes, so users see a
+   * stable anchor row at the top of the list. Cleared back to
+   * `null` when the user unpins. */
+  pinnedAt: z.number().nullable().default(null),
+  /** Wall-clock time (unix ms) the scope was most recently
+   * unpinned, or `null` if it has never been unpinned. Used as
+   * the priority sort key for the *unpinned* section of the
+   * sidebar: `priority = max(unpinnedAt ?? 0, createdAt)` so a
+   * freshly-unpinned scope bubbles to the top of the unpinned
+   * group instead of dropping to the bottom (which would feel
+   * like "I just lost it"). Survives a re-pin so the priority
+   * isn't reset on every toggle. */
+  unpinnedAt: z.number().nullable().default(null),
+  /** When set, this scope was materialized by the "Create Plugin"
+   * action: its directory is a git worktree of the sentinel
+   * (self-edit) repo at `~/.zenbu/plugin-worktrees/<pluginName>`,
+   * and the scope's `extraDirectories` includes the standalone
+   * plugin source at `~/.zenbu/plugins/<pluginName>`. Acts as a
+   * generic "this worktree has a purpose tag" discriminator so
+   * the sidebar can paint a puzzle icon next to the group
+   * without having to introspect the filesystem. Null for
+   * regular worktrees. */
+  pluginName: z.string().nullable().default(null),
 });
 
 const chatSessionRef = z.discriminatedUnion("kind", [
@@ -164,6 +213,21 @@ const session = z.object({
    * context across multi-turn (tool-call) runs. Null when no run
    * is in flight. */
   runStartContextTokens: z.number().nullable().default(null),
+  /** Wall-clock time the user most recently "opened" this session in
+   * any window (i.e. it became the active tab of some pane, or fired
+   * `agent_end` while the user was already viewing it). Stamped by
+   * `SessionActivityService`, which subscribes to `windowStates` and
+   * watches the active session per pane. Compared against
+   * `lastCompletedAt` to drive the unread-dot in the sidebar / pane
+   * tabstrip: `dot = lastCompletedAt > (lastOpenedAt ?? 0)`. Null
+   * until the session has been opened at least once. */
+  lastOpenedAt: z.number().nullable().default(null),
+  /** Wall-clock time the agent last finished a turn for this session
+   * (`agent_end` from pi). Stamped by `SessionsService`. Drives the
+   * unread-dot in the sidebar / pane tabstrip; cleared/overtaken by
+   * `lastOpenedAt` as soon as the user looks at the session again.
+   * Null when the session has never completed a turn. */
+  lastCompletedAt: z.number().nullable().default(null),
   /** Rich shadow of pi's queue. Authoritative for payload; pi is
    * authoritative for delivery ordering within each kind. */
   queueDraft: z.array(queuedMessage).default([]),
@@ -190,7 +254,37 @@ const chatState = z.object({
   draft: z.string().default(""),
 });
 
-const leftSidebarTab = z.enum(["agent", "pi-sessions"]);
+const leftSidebarTab = z.enum(["agent", "pi-sessions", "extra-dirs"]);
+
+/**
+ * What the window's center pane currently shows, and the data the
+ * non-onboarding cases need. Modeled as a discriminated union so
+ * the workspace id only exists when there's actually a workspace
+ * open — no "last workspace" leaking into views that should be
+ * showing onboarding.
+ *
+ * Today there are two kinds:
+ *   - `workspace`: a real workspace is open. `workspaceId` keys
+ *     into `root.app.workspaces` and into the window's
+ *     `workspacePanes` map.
+ *   - `onboarding`: render the onboarding screen (used when the
+ *     user clicks the "+" in the workspace rail, and as the
+ *     initial state on a fresh install before any workspace has
+ *     been created).
+ *
+ * Future non-workspace center views (settings page, marketplace,
+ * etc.) extend this union by adding new cases.
+ *
+ * TODO(zenbu.js): formalize this as a proper server-side derived
+ * router primitive in core rather than a hand-rolled field.
+ */
+const activeView = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("workspace"),
+    workspaceId: z.string(),
+  }),
+  z.object({ kind: z.literal("onboarding") }),
+]);
 
 /**
  * Obsidian-style pane state for the chat working area. Each scope has
@@ -258,11 +352,56 @@ const workspacePaneState = z.object({
   activePaneId: z.string(),
 });
 
+/**
+ * Per-workspace shell UI state. Holds the things that are truly
+ * workspace-wide (i.e. don't change as the active worktree
+ * changes inside the workspace): the left sidebar's width,
+ * whether it's open, and which tab inside it is selected.
+ *
+ * Everything that follows the active worktree/scope (right
+ * sidebar, bottom panel — their content is parameterized by
+ * scopeId/directory) lives on `scopeUiState` instead.
+ *
+ * Sizes use absolute pixels; `null` means "never saved, fall
+ * back to the shell's default". Writes flow through Allotment's
+ * `onDragEnd` so our own imperative `resize(...)` calls during
+ * workspace/scope switch don't re-enter the persistence path.
+ */
+const workspaceUiState = z.object({
+  sidebarWidth: z.number().nullable().default(null),
+  leftSidebarOpen: z.boolean().default(true),
+  leftSidebarTab: leftSidebarTab.default("agent"),
+});
+
+/**
+ * Per-scope shell UI state. The right sidebar and bottom panel
+ * already render scope-parameterized content (their views are
+ * passed `scopeId` / `directory` as args), so it would be
+ * disorienting for the layout state — which view is open, how
+ * wide / tall it is, whether the panel is expanded at all — to
+ * stay constant while the content underneath swaps out. We keep
+ * those bits keyed by scopeId here.
+ *
+ * Scope state lives on `windowState` (and not on the scope
+ * record itself) because the same scope can be open in multiple
+ * windows, each with its own panel layout.
+ *
+ * `null` size = "never saved, fall back to shell default".
+ * `null` view selector = "use the first registered view" /
+ * "panel is collapsed". Open flags default to closed because a
+ * freshly visited scope shouldn't pop open panels the user
+ * hasn't asked for yet.
+ */
+const scopeUiState = z.object({
+  rightSidebarWidth: z.number().nullable().default(null),
+  terminalHeight: z.number().nullable().default(null),
+  bottomPanelOpen: z.boolean().default(false),
+  bottomPanelView: z.string().nullable().default(null),
+  rightSidebarOpenType: z.string().nullable().default(null),
+  rightSidebarLastType: z.string().nullable().default(null),
+});
+
 const windowState = z.object({
-  /** Primary workspace selection axis. Pane layout, the chat being
-   * shown, the active worktree, etc. all derive from this + the
-   * active tab inside `workspacePanes[selectedWorkspaceId]`. */
-  selectedWorkspaceId: z.string().nullable().default(null),
   /** Denormalized cache of `chats[activeChatId]?.scopeId`. Kept in
    * sync by every pane/tab mutation helper so iframe views that
    * walk window-state directly (file-tree, git-tree, pi-event-log,
@@ -274,34 +413,32 @@ const windowState = z.object({
   /** Sidebar collapse state for each worktree group, keyed by
    * scopeId. Default empty = all groups expanded. */
   worktreeGroupCollapsed: z.record(z.string(), z.boolean()).default({}),
-  leftSidebarTab: leftSidebarTab.default("agent"),
+  /** What the center pane currently shows. The workspaceId only
+   * exists on the `workspace` case so consumers can't accidentally
+   * read a stale "last workspace" while the user is on the
+   * onboarding screen — if you want the active workspace, you
+   * have to acknowledge that there might not be one. */
+  activeView: activeView.default({ kind: "onboarding" }),
   /** Pane layout per workspace. Tabs in a workspace's panes can
    * point at chats from any scope/worktree in that workspace; the
    * tab strip is therefore the unified "task view" for the
    * workspace. */
   workspacePanes: z.record(z.string(), workspacePaneState).default({}),
-  /** Which bottom-panel view is currently active in this window.
-   * Null means "fall back to the default" (the first registered
-   * bottom-panel view, typically `terminal`). The panel itself can
-   * still be collapsed; that's local UI state, not persisted. */
-  bottomPanelView: z.string().nullable().default(null),
-  /** Whether the left sidebar is currently expanded in this window.
-   * Persisted so a renderer reload doesn't reset it. */
-  leftSidebarOpen: z.boolean().default(true),
   /** Whether the workspace rail (the narrow column on the far left
    * that holds the workspace icons) is currently visible. Toggled
-   * with ⌘⇧B. */
+   * with ⌘⇧B. This one stays *window*-scoped because the rail
+   * shows *all* workspaces — it's not part of any one workspace's
+   * UI. */
   workspaceRailOpen: z.boolean().default(true),
-  /** Which right-sidebar view is currently open in this window, or
-   * `null` when the right sidebar is collapsed. */
-  rightSidebarOpenType: z.string().nullable().default(null),
-  /** The last right-sidebar view the user picked, so closing +
-   * reopening the right sidebar restores it instead of landing on
-   * the first registered view. */
-  rightSidebarLastType: z.string().nullable().default(null),
-  /** Whether the bottom panel (terminal/etc.) is currently expanded
-   * in this window. */
-  bottomPanelOpen: z.boolean().default(false),
+  /** Per-workspace shell UI state. Keyed by workspaceId. See
+   * `workspaceUiState` above for what lives here vs on the
+   * per-scope record. */
+  workspaceUiStates: z.record(z.string(), workspaceUiState).default({}),
+  /** Per-scope shell UI state. Keyed by scopeId. See
+   * `scopeUiState` above; this is where the right sidebar and
+   * bottom panel's open/which-view/size bits live so they track
+   * the active worktree the way their content already does. */
+  scopeUiStates: z.record(z.string(), scopeUiState).default({}),
 });
 
 const fileTreeIndexStatus = z.enum(["idle", "indexing", "error"]);
@@ -399,6 +536,52 @@ const env = z.object({
   homeDir: z.string().nullable().default(null),
 });
 
+// Which IDE on disk a `recentProject` entry was discovered in.
+// Pulled from VS Code-derived IDEs' on-disk caches:
+//   ~/Library/Application Support/<App>/User/globalStorage/state.vscdb
+// for the recent list, and matching
+//   ~/Library/Application Support/<App>/User/workspaceStorage/<hash>/workspace.json
+// dirs for per-IDE "last opened" mtimes. `RecentProjectsService`
+// adds new sources here whenever it grows support for another fork.
+const recentProjectSource = z.enum([
+  "code",
+  "cursor",
+  "windsurf",
+  "antigravity",
+  "trae",
+]);
+
+/**
+ * A folder the user has recently opened in some other IDE on this
+ * machine. Populated by RecentProjectsService (main process)
+ * by reading each IDE's state.vscdb + workspaceStorage dirs,
+ * then merging by absolute path.
+ *
+ * Surfaced in the onboarding view as "one-click open project" so
+ * the user doesn't have to navigate the folder picker for the
+ * 100% common case of "the project I was just in over there".
+ */
+const recentProject = z.object({
+  /** Stable id = sha1(path); lets us key the record without
+   * embedding the path itself in the key (which would make path
+   * containing characters like `.` awkward in object spreads). */
+  id: z.string(),
+  /** Absolute local path. Always a real directory at the moment
+   * the record was written — the service drops entries whose
+   * path stops existing on disk. */
+  path: z.string(),
+  /** `path.basename(path)`. Denormalized so the renderer can list
+   * entries without re-running path logic. */
+  name: z.string(),
+  /** Last time this folder was opened in *any* of the discovered
+   * IDEs, in unix millis. Max across `sources`. */
+  lastOpenedAt: z.number(),
+  /** Which IDEs this folder showed up in. Useful for showing a
+   * little badge per entry, and for telemetry-free debugging
+   * of why something showed up. */
+  sources: z.array(recentProjectSource),
+});
+
 /**
  * What "Enter" does in the composer while the agent is streaming.
  * Steer interjects before the agent's next LLM call; followUp queues
@@ -425,6 +608,62 @@ const defaultSendMode = z.enum(["steer", "followUp"])
  * and feeds the paths into `DefaultResourceLoader.additionalExtensionPaths`
  * when activating a session.
  */
+/**
+ * One log line from a play-button run. We store stdout, stderr,
+ * and synthetic "system" messages (start/setup/exit banners) in
+ * the same stream so the renderer can render them in one timeline.
+ * `runId` tags which run the line belongs to — the UI uses it to
+ * group lines into sessions and to know when to reset the URL
+ * footer.
+ */
+const playLogItem = z.object({
+  ts: z.number(),
+  stream: z.enum(["stdout", "stderr", "system"]),
+  data: z.string(),
+  runId: z.string(),
+})
+
+/**
+ * Per-workspace play-button config + live process state. Owned by
+ * `PlayService`. The renderer's play button reads `isRunning` to
+ * choose between the play/stop icon, and `startCommand` to know
+ * whether the workspace has ever been configured (empty string =
+ * "not configured yet, show the setup form").
+ *
+ * `setupCompletedScopeIds` is the list of scope ids the setup
+ * command has successfully exited 0 in. Setup is per-scope (each
+ * scope is its own worktree / directory and has to be
+ * independently bootstrapped — e.g. `pnpm install` writes a
+ * `node_modules/` into the scope's directory, not the
+ * workspace's), so we track which scopes have been set up rather
+ * than a single workspace-wide flag. Any subsequent `saveConfig`
+ * call that touches `setupCommand` clears the list so every
+ * scope re-runs setup against the new command. If `setupCommand`
+ * is null the workspace is treated as "setup-not-needed" and we
+ * go straight to start.
+ *
+ * `isRunning` / `currentRunId` are runtime mirrors. On startup
+ * `PlayService.evaluate()` resets them to false/null because the
+ * in-memory process map is gone — TODO: drop this manual reset
+ * once core grows the "service-only / not synced to disk"
+ * database state we keep talking about.
+ */
+const playConfig = z.object({
+  workspaceId: z.string(),
+  setupCommand: z.string().nullable().default(null),
+  startCommand: z.string().default(""),
+  /** Scope ids that have successfully run the configured setup
+   * command against the current `setupCommand`. Cleared whenever
+   * `setupCommand` changes (see `saveConfig`). A scope that's
+   * missing from this list will re-run setup the next time the
+   * user clicks Run from it. */
+  setupCompletedScopeIds: z.array(z.string()).default([]),
+  isRunning: z.boolean().default(false),
+  currentRunId: z.string().nullable().default(null),
+  currentRunStartedAt: z.number().nullable().default(null),
+  logs: collection(playLogItem, { debugName: "play-logs" }),
+})
+
 const piExtension = z.object({
   id: z.string(),
   path: z.string(),
@@ -468,6 +707,17 @@ const schema = createSchema({
    * `PiExtensionRegistryService.evaluate()` and re-populated by
    * plugins from their own service `setup()` blocks. */
   piExtensions: z.record(z.string(), piExtension).default({}),
+  /** Per-workspace play-button config + live run state. Keyed by
+   * `workspaceId`. Created lazily by `PlayService` the first time
+   * a workspace opens its play popover. The `logs` field on each
+   * entry is a collection ref initialised at create time. */
+  playConfigs: z.record(z.string(), playConfig).default({}),
+  /** Folders the user has recently opened in other IDEs on this
+   * machine, indexed by sha1(path). Populated entirely by
+   * `RecentProjectsService` on every app boot — the service
+   * truncates and rewrites this record, so anything stale (path
+   * deleted, IDE uninstalled) disappears on next launch. */
+  recentProjects: z.record(z.string(), recentProject).default({}),
   env: env.default({ homeDir: null }),
   settings: settings.default({
     theme: "system",

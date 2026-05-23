@@ -1,0 +1,116 @@
+{
+  "id": "2233ea39-74bc-4bec-8e9d-2607aba0da86",
+  "prevId": "4df2cdaa-650c-488b-8561-727f898eef8b",
+  "fields": {
+    "repos": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "abc6daf49c0fb814",
+      "default": {}
+    },
+    "workspaces": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "06d8a1079274d27a",
+      "default": {}
+    },
+    "scopes": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "dd79c419c49e8b88",
+      "default": {}
+    },
+    "chats": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "e274c6a653a1d416",
+      "default": {}
+    },
+    "sessions": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "aa18db08fe4063bc",
+      "default": {}
+    },
+    "windowStates": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "505b402aded2ba51",
+      "default": {}
+    },
+    "chatStates": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "1435d8954a9470c5",
+      "default": {}
+    },
+    "terminals": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "f6cee4787dd01d49",
+      "default": {}
+    },
+    "fileTreeIndexes": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "5be79a98ec942832",
+      "default": {}
+    },
+    "models": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "389f9537591154c4",
+      "default": {}
+    },
+    "sessionMeta": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "52998134722c6aa1",
+      "default": {}
+    },
+    "chatWindows": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "f95e82b83f93bd6a",
+      "default": {}
+    },
+    "piExtensions": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "60d3727986700ee2",
+      "default": {}
+    },
+    "playConfigs": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "9b7c15ba37b6806e",
+      "default": {}
+    },
+    "recentProjects": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "78467fab863fcfdb",
+      "default": {}
+    },
+    "env": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "5aa7b30ea8cde207",
+      "default": {
+        "homeDir": null
+      }
+    },
+    "settings": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "1fd645ea78aaccda",
+      "default": {
+        "theme": "system",
+        "chatBackground": null,
+        "vimMode": true,
+        "sidebarChatSort": "created",
+        "defaultSendMode": "followUp"
+      }
+    }
+  }
+}

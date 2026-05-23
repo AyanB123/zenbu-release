@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { defaultWorktreePath } from "@/lib/worktree-paths"
 
 export type CreateWorktreeDialogProps = {
   open: boolean
@@ -144,21 +145,3 @@ export function CreateWorktreeDialog({
   )
 }
 
-function defaultWorktreePath(mainWorktreePath: string, branch: string): string {
-  const parentDir = parentOf(mainWorktreePath)
-  const repoName = basenameOf(mainWorktreePath)
-  const safeBranch = branch.replace(/[/\\:]+/g, "-")
-  return `${parentDir}/${repoName}-${safeBranch}`
-}
-
-function parentOf(p: string): string {
-  const idx = p.replace(/\/+$/, "").lastIndexOf("/")
-  if (idx <= 0) return "/"
-  return p.slice(0, idx)
-}
-
-function basenameOf(p: string): string {
-  const trimmed = p.replace(/\/+$/, "")
-  const idx = trimmed.lastIndexOf("/")
-  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed
-}

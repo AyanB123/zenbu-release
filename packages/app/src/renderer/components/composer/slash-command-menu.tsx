@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { SlashCommand } from "./types"
@@ -15,6 +16,16 @@ export function SlashCommandMenu({
   onSelect,
   onHover,
 }: SlashCommandMenuProps) {
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([])
+
+  useEffect(() => {
+    const el = itemRefs.current[selectedIndex]
+    // `block: "nearest"` keeps the row in view without jumping when
+    // it's already visible, so arrow nav feels snappy instead of
+    // recentering on every keystroke.
+    el?.scrollIntoView({ block: "nearest" })
+  }, [selectedIndex])
+
   if (options.length === 0) return null
 
   return (
@@ -26,6 +37,9 @@ export function SlashCommandMenu({
         {options.map((option, i) => (
           <Button
             key={option.id}
+            ref={el => {
+              itemRefs.current[i] = el
+            }}
             type="button"
             variant="ghost"
             role="option"

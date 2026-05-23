@@ -64,15 +64,29 @@ export class GitTreeService extends Service.create({
     })
   }
 
-  /** Called by the git-tree sidebar view when the user clicks a file.
-   * Re-broadcasts as an `openDiffInActivePane` event so the main shell
-   * (which owns the pane layout) can split off a new pane with the
-   * `git-diff` view in it. Mirrors `FileTreeService.openFile`. */
+  /** Called by the git-tree sidebar view OR a turn-summary card
+   * when the user clicks a file. Re-broadcasts as an
+   * `openDiffInActivePane` event so the main shell (which owns the
+   * pane layout) can split off a new pane with the `git-diff` view
+   * in it. Mirrors `FileTreeService.openFile`.
+   *
+   * `workspaceId` + `scopeId` are required so the shell knows
+   * *where* to open the diff. The git-tree sidebar reads them off
+   * its own `useActiveScope`; the turn-summary card reads them off
+   * the chat that owns the summary. Without them the shell would
+   * fall back to the window's currently-active workspace, which
+   * is exactly the bug we hit when a user clicked a turn-summary
+   * card while focused on a different workspace's chat — the diff
+   * would teleport them into the wrong workspace. */
   async openDiff(args: {
+    workspaceId: string
+    scopeId: string
     directory: string
     path: string
   }): Promise<{ ok: true }> {
     this.ctx.rpc.emit.app.openDiffInActivePane({
+      workspaceId: args.workspaceId,
+      scopeId: args.scopeId,
       directory: args.directory,
       path: args.path,
     })

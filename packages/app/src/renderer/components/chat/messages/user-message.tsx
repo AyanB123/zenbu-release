@@ -6,26 +6,34 @@ import {
   useState,
   type MouseEvent,
 } from "react"
+import { ChevronDown, ChevronUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Composer } from "@/components/composer/composer"
 import type { ComposerSubmitPayload } from "@/components/composer/composer"
 import type { UserMessageProps } from "../message-components"
 import { FileIndexContext } from "../lib/file-index-context"
 import { UserMessageImage } from "./user-message-image"
+import { cn } from "@/lib/utils"
 import {
   BranchSummaryPicker,
   type BranchSummaryChoice,
 } from "../lib/branch-summary-choice"
 
+const COLLAPSED_MAX_HEIGHT = 120
+
 /**
- * Read-only render of a past user message bubble, with two hover-
- * affordances tucked under the bubble footer (alongside copy):
+ * Read-only render of a past user message bubble. Click the bubble
+ * body to flip into edit mode; a Revert affordance lives under the
+ * bubble footer alongside copy.
  *
- *   - Edit (pencil): flip the same Composer instance from `readOnly`
- *     into a live editor seeded with the bubble's content. Pressing
- *     Enter captures the edit and reveals the summarize-choice
- *     picker; once the user picks None / Default / Custom, the
- *     parent `onEditSubmit` runs the branch-and-send flow.
+ *   - Edit (click bubble): flip the same Composer instance from
+ *     `readOnly` into a live editor seeded with the bubble's
+ *     content. Pressing Enter captures the edit and reveals the
+ *     summarize-choice picker; once the user picks None / Default /
+ *     Custom, the parent `onEditSubmit` runs the branch-and-send
+ *     flow. Drag-selecting text inside the bubble doesn't trigger
+ *     the flip (we ignore clicks when there's an active selection)
+ *     so copy-by-selection still works on the read-only view.
  *
  *   - Revert (undo arrow): no editor stage. Goes straight to the
  *     summarize picker; once the user picks, `onRevertSubmit` runs
@@ -37,6 +45,14 @@ import {
  * with a `BranchSummaryChoice`. The bubble itself is oblivious to
  * the underlying RPCs \u2014 the chat-pane wires `onEditSubmit` /
  * `onRevertSubmit` into the right main-process calls.
+ *
+ * Overflow: when the message body exceeds `COLLAPSED_MAX_HEIGHT`,
+ * we clip it and pin a gradient-fade chevron strip across the
+ * bottom edge that doubles as the expand affordance — same
+ * treatment the post-turn summary card uses (see `turn-summary.tsx`).
+ * Clicking the strip expands; clicking it does _not_ enter edit
+ * mode (it stops propagation), so the chevron stays a pure
+ * expand/collapse control.
  *
  * Legacy fallback: messages persisted before the migration to
  * display-text don't contain `@blob:<id>` tokens, so their image
@@ -133,7 +149,14 @@ export function UserMessage({
 
   useLayoutEffect(() => {
     const el = innerRef.current
-    if (el) setOverflows(el.scrollHeight > 120)
+    if (!el) return
+    const check = () => {
+      setOverflows(el.scrollHeight > COLLAPSED_MAX_HEIGHT + 1)
+    }
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => ro.disconnect()
   }, [content])
 
   const handleCopy = (e: MouseEvent) => {
@@ -143,13 +166,26 @@ export function UserMessage({
     setTimeout(() => setCopied(false), 1500)
   }
 
-  const handleEdit = (e: MouseEvent) => {
-    e.stopPropagation()
+  const enterEditMode = () => {
     if (userMessageIndex == null || !onEditSubmit) return
     // Expand so the user can see/edit the whole message even if it
     // was collapsed behind a fade.
     setExpanded(true)
     setStage({ kind: "editing" })
+  }
+
+  // Click anywhere inside the bubble to enter edit mode — unless
+  // the user is mid-drag-selecting text, in which case we want to
+  // preserve the selection for copy. We also bail when something
+  // already stopped propagation (action buttons, the expand
+  // chevron) or when we're not in a clickable stage.
+  const handleBubbleClick = (e: MouseEvent<HTMLDivElement>) => {
+    if (e.defaultPrevented) return
+    if (!canEdit) return
+    if (stage.kind !== "idle") return
+    const selection = window.getSelection()
+    if (selection && selection.toString().length > 0) return
+    enterEditMode()
   }
 
   const handleRevert = (e: MouseEvent) => {
@@ -213,6 +249,11 @@ export function UserMessage({
   const showingPicker =
     stage.kind === "editChoosing" || stage.kind === "revertChoosing"
   const busy = stage.kind === "busy"
+  const clipped =
+    !expanded && !editing && !showingPicker && !busy && overflows
+  const showCollapseFooter =
+    expanded && !editing && !showingPicker && !busy && overflows
+  const bubbleClickable = canEdit && stage.kind === "idle"
 
   // React `key` on Composer forces a full unmount/remount when we
   // flip in/out of edit mode. The Composer reads `readOnly` once at
@@ -224,17 +265,26 @@ export function UserMessage({
     <div className="group/msg py-1">
       <div
         ref={bubbleRef}
-        className="group w-full rounded-md border border-border bg-accent text-accent-foreground"
+        onClick={handleBubbleClick}
+        className={cn(
+          // `overflow-hidden` is what actually makes the bubble round.
+          // Without it, `rounded-md` only curves the bubble's own
+          // background + border, but children (CodeMirror lines,
+          // image pill widgets, the gradient-fade chevron strip) all
+          // paint into a square clip box that bleeds over the curved
+          // corners. Most visible when the message is just a pasted
+          // image — the embedded preview ran right up to a sharp
+          // corner inside a clearly-rounded chip.
+          "group w-full overflow-hidden rounded-md border border-border bg-accent text-accent-foreground",
+          bubbleClickable && "cursor-text",
+        )}
         style={{
           boxShadow: "0 1px 2px rgba(0, 0, 0, 0.03)",
         }}
       >
         <div
-          className={`relative overflow-hidden ${
-            expanded || editing || showingPicker || busy
-              ? ""
-              : "max-h-[120px]"
-          }`}
+          className="relative overflow-hidden"
+          style={clipped ? { maxHeight: COLLAPSED_MAX_HEIGHT } : undefined}
         >
           <div ref={innerRef} className="user-message-body">
             <Composer
@@ -292,30 +342,40 @@ export function UserMessage({
               />
             ) : null}
           </div>
-          {!expanded && !editing && !showingPicker && !busy && overflows && (
-            <div
-              className="absolute inset-x-0 bottom-0 h-10"
-              style={{
-                background:
-                  "linear-gradient(to top, var(--accent), transparent)",
+          {clipped ? (
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation()
+                setExpanded(true)
               }}
-            />
-          )}
+              aria-label="Expand message"
+              className={cn(
+                "absolute inset-x-0 bottom-0 flex h-10 items-end justify-center pb-1.5",
+                "bg-gradient-to-t from-accent via-accent/85 to-transparent",
+                "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <ChevronDown className="h-4 w-4" />
+            </button>
+          ) : null}
         </div>
-        {overflows && !editing && !showingPicker && !busy && (
-          <Button
+        {showCollapseFooter ? (
+          <button
             type="button"
-            variant="ghost"
             onClick={e => {
               e.stopPropagation()
-              setExpanded(v => !v)
+              setExpanded(false)
             }}
-            className="h-auto w-full pt-1.5 text-muted-foreground hover:bg-transparent hover:text-foreground"
-            aria-label={expanded ? "Collapse" : "Expand"}
+            aria-label="Collapse message"
+            className={cn(
+              "flex w-full items-center justify-center gap-1 border-t border-border/60 py-1",
+              "text-sm text-muted-foreground hover:text-foreground",
+            )}
           >
-            <Chevron direction={expanded ? "up" : "down"} />
-          </Button>
-        )}
+            <ChevronUp className="h-4 w-4" />
+          </button>
+        ) : null}
       </div>
       <div className="relative flex h-2 justify-end">
         <div className="absolute right-0 top-0 flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100">
@@ -336,19 +396,6 @@ export function UserMessage({
             </Button>
           ) : (
             <>
-              {canEdit && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={handleEdit}
-                  className="gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-transparent hover:text-foreground"
-                  aria-label="Edit (branches the session)"
-                  title="Edit \u2192 branch + send"
-                >
-                  <PencilIcon />
-                </Button>
-              )}
               {canRevert && (
                 <Button
                   type="button"
@@ -385,27 +432,6 @@ export function UserMessage({
 // reference stays stable across renders.
 const NOOP_SUBMIT = () => {}
 
-function Chevron({ direction }: { direction: "up" | "down" }) {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 14 14"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {direction === "down" ? (
-        <path d="M3.5 5.5L7 9l3.5-3.5" />
-      ) : (
-        <path d="M3.5 9L7 5.5 10.5 9" />
-      )}
-    </svg>
-  )
-}
-
 function CheckIcon() {
   return (
     <svg
@@ -437,24 +463,6 @@ function CopyIcon() {
     >
       <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
       <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-    </svg>
-  )
-}
-
-function PencilIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 20h9" />
-      <path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4 12.5-12.5z" />
     </svg>
   )
 }

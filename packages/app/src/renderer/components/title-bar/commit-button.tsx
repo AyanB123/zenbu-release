@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useRpc } from "@zenbujs/core/react"
-import { GitCommitVerticalIcon } from "lucide-react"
+import {
+  GitCommitVerticalIcon,
+  GitPullRequestIcon,
+} from "lucide-react"
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { useOpenPrView } from "@/views/pull-requests/lib/use-open-pr-view"
 import { CommitPopoverBody } from "./commit-popover-body"
 
 const POLL_MS = 3000
@@ -42,11 +46,24 @@ export type CommitButtonProps = {
  * is cheap. While the popover is open we also let the popover drive
  * refresh after mutating actions (commit/pull/push/fetch).
  */
+type PopoverView = "menu" | "commit"
+
 export function CommitButton({ directory }: CommitButtonProps) {
   const rpc = useRpc()
+  const openPrView = useOpenPrView(directory)
   const [summary, setSummary] = useState<Summary | null>(null)
   const [open, setOpen] = useState(false)
+  const [view, setView] = useState<PopoverView>("menu")
   const inFlight = useRef(false)
+
+  // Reset back to the menu whenever the popover closes so the next
+  // click on the button starts from the action picker again,
+  // instead of dropping the user straight back into the commit
+  // form they were looking at last time.
+  const handleOpenChange = useCallback((next: boolean) => {
+    setOpen(next)
+    if (!next) setView("menu")
+  }, [])
 
   const refresh = useCallback(async () => {
     if (!directory) {
@@ -98,8 +115,10 @@ export function CommitButton({ directory }: CommitButtonProps) {
     additions > 0 ||
     deletions > 0
 
+  if (!dirty) return null
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -111,44 +130,99 @@ export function CommitButton({ directory }: CommitButtonProps) {
               : "Commit"
           }
           className={
-            "group inline-flex h-[22px] items-center gap-1.5 rounded-md border border-transparent " +
-            "px-1.5 text-[11px] font-medium leading-none transition-colors " +
-            "hover:border-border hover:bg-background/60 " +
-            "data-[state=open]:border-border data-[state=open]:bg-background/60 " +
+            "group inline-flex h-[22px] items-center gap-1.5 rounded-md border border-border bg-background/40 " +
+            "px-2 text-[11px] font-medium leading-none transition-colors " +
+            "hover:bg-background/70 " +
+            "data-[state=open]:bg-background/80 " +
             (dirty ? "text-foreground" : "text-muted-foreground")
           }
         >
           <GitCommitVerticalIcon className="h-3.5 w-3.5 opacity-80" />
-          {dirty ? (
-            <span className="flex items-center gap-1 tabular-nums">
-              <span className="text-emerald-500 dark:text-emerald-400">
-                +{additions}
-              </span>
-              <span className="text-rose-500 dark:text-rose-400">
-                −{deletions}
-              </span>
-              {untracked > 0 && (
-                <span className="text-muted-foreground">·{untracked}</span>
-              )}
+          <span className="flex items-center gap-1 tabular-nums">
+            <span className="text-emerald-500 dark:text-emerald-400">
+              +{additions}
             </span>
-          ) : (
-            <span className="text-muted-foreground">clean</span>
-          )}
+            <span className="text-rose-500 dark:text-rose-400">
+              −{deletions}
+            </span>
+            {untracked > 0 && (
+              <span className="text-muted-foreground">·{untracked}</span>
+            )}
+          </span>
         </button>
       </PopoverTrigger>
       <PopoverContent
         align="end"
         sideOffset={6}
-        className="w-[460px] p-0"
+        className={view === "menu" ? "w-[160px] p-1" : "w-[460px] p-0"}
       >
-        <CommitPopoverBody
-          directory={directory}
-          open={open}
-          summary={summary}
-          onRefreshSummary={refresh}
-          onClose={() => setOpen(false)}
-        />
+        {view === "menu" ? (
+          <ActionMenu
+            onCommit={() => setView("commit")}
+            onPr={() => {
+              setOpen(false)
+              openPrView({ mode: "create", openMode: "split-right" })
+            }}
+          />
+        ) : (
+          <CommitPopoverBody
+            directory={directory}
+            open={open}
+            summary={summary}
+            onRefreshSummary={refresh}
+            onClose={() => setOpen(false)}
+          />
+        )}
       </PopoverContent>
     </Popover>
+  )
+}
+
+function ActionMenu({
+  onCommit,
+  onPr,
+}: {
+  onCommit: () => void
+  onPr: () => void
+}) {
+  return (
+    <div className="flex flex-col">
+      <ActionMenuItem
+        icon={<GitCommitVerticalIcon className="h-3.5 w-3.5" />}
+        label="Commit"
+        onClick={onCommit}
+      />
+      <ActionMenuItem
+        icon={<GitPullRequestIcon className="h-3.5 w-3.5" />}
+        label="Pull request"
+        onClick={onPr}
+      />
+    </div>
+  )
+}
+
+function ActionMenuItem({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        "group flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[12px] " +
+        "transition-colors hover:bg-accent hover:text-accent-foreground"
+      }
+    >
+      <span className="text-muted-foreground group-hover:text-accent-foreground">
+        {icon}
+      </span>
+      <span className="flex-1 truncate font-medium">{label}</span>
+    </button>
   )
 }

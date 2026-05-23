@@ -86,15 +86,21 @@ export class PrService extends Service.create({
   },
 }) {
   evaluate() {
+    // View *type* is `"git"` (matching the label the user sees);
+    // the source directory + service `key` stay as `pr` for
+    // historical reasons. Aligning the registered type with the
+    // label keeps the command palette fuzzy match honest — a query
+    // of `pr` shouldn't surface this view (the new `pull-requests`
+    // view is the one that actually belongs to PR work).
     this.setup("register-view", () => {
       this.ctx.viewRegistry.registerAlias({
-        type: "pr",
+        type: "git",
         reloaderId: "app",
         pathPrefix: "/views/pr",
         meta: { kind: "view", label: "Git" },
       })
       return () => {
-        void this.ctx.viewRegistry.unregister("pr")
+        void this.ctx.viewRegistry.unregister("git")
       }
     })
   }

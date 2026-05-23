@@ -28,6 +28,14 @@ export type ChatTabEntry = {
    * underlying session is currently streaming / running. Mirrors the
    * spinner shown in the agent sidebar rows. */
   isStreaming?: boolean
+  /** When true, render an unread dot on the tab. Used in the same
+   * spirit as the sidebar row: the agent finished a turn while the
+   * user wasn't viewing this tab. The owning container computes
+   * this from `session.lastCompletedAt > (session.lastOpenedAt ?? 0)`
+   * and gates it on "this tab is NOT the active one in a focused
+   * pane" — `SessionActivityService` will clear the unread the
+   * moment the user focuses the tab. */
+  hasUnread?: boolean
   /** When true the tab is hosting a registered view (file-tree, pr,
    * etc.) rather than a chat. The tabstrip uses this to skip
    * chat-specific affordances and to avoid subscribing to session
@@ -390,6 +398,22 @@ function ChatTabItem({
               )}
             >
               <Spinner />
+            </span>
+          )}
+          {entry.hasUnread && !entry.isStreaming && (
+            // Unread dot: a turn finished on this session while the
+            // user wasn't viewing this tab. Hidden on hover so it
+            // doesn't fight the close button for the same slot, and
+            // suppressed entirely while streaming because the
+            // spinner already covers "something is happening".
+            <span
+              aria-label="Unread"
+              className={cn(
+                "flex shrink-0 items-center",
+                !minimal && "group-hover:hidden",
+              )}
+            >
+              <span className="block h-1.5 w-1.5 rounded-full bg-foreground" />
             </span>
           )}
           {!minimal && (

@@ -112,19 +112,33 @@ export function ChatPaneContainer({
           chat && chat.session.kind === "ready"
             ? chat.session.sessionId
             : null
-        const isStreaming = sessionId
-          ? sessionsById[sessionId]?.isStreaming ?? false
-          : false
+        const sessionRecord = sessionId ? sessionsById[sessionId] : null
+        const isStreaming = sessionRecord?.isStreaming ?? false
+        // Only show unread on tabs that aren't the active tab of
+        // a focused pane. `SessionActivityService` stamps
+        // `lastOpenedAt` for active tabs, but it only fires AFTER
+        // a db update lands — the local `t.id !== pane.activeTabId
+        // || !isActivePane` guard avoids a 1-frame flash where the
+        // dot would otherwise be visible on the tab the user just
+        // clicked into.
+        const isFocusedHere = isActivePane && t.id === pane.activeTabId
+        const hasUnread =
+          !isFocusedHere &&
+          sessionRecord != null &&
+          sessionRecord.lastCompletedAt != null &&
+          sessionRecord.lastCompletedAt >
+            (sessionRecord.lastOpenedAt ?? 0)
         return {
           id: t.id,
           title,
           hasChat: !!chat,
           sessionId,
           isStreaming,
+          hasUnread,
           isView: false,
         }
       }),
-    [pane.tabs, chatsById, sessionsById, viewLabelFor],
+    [pane.tabs, pane.activeTabId, isActivePane, chatsById, sessionsById, viewLabelFor],
   )
 
   const selectPane = useSelectPane()
@@ -209,10 +223,26 @@ export function ChatPaneContainer({
   const activeChat = activeChatId ? chatsById[activeChatId] : null
   const activeIsView = activeTab?.content.kind === "view"
 
-  // Safety net for legacy/edge-case data: chat tabs with chatId=null
-  // get a freshly-created chat materialized so we never paint the
-  // empty placeholder. The new chat lands in the workspace's
-  // earliest-created scope (the primary worktree).
+  // Safety net for two adjacent failure modes that both manifest as
+  // "the chat surface looks alive but Enter does nothing":
+  //
+  //   1. Legacy / edge-case data: a chat tab points at `chatId=null`
+  //      (or a chatId that no longer resolves). We fabricate a fresh
+  //      chat in the workspace's primary scope and assign it to the
+  //      tab, then materialize its session.
+  //   2. Pending session: the chat exists but its `session` is still
+  //      `{ kind: "pending" }` because whoever created it didn't (or
+  //      couldn't) follow up with `createChatSession`. The most
+  //      visible offender historically was `SentinelWorkspaceService`
+  //      — fixed at the source now — but anything that creates a
+  //      pending chat and forgets the RPC ends up here too. We just
+  //      fire `createChatSession`; it's idempotent (returns the
+  //      existing sessionId if the chat is already ready), so a
+  //      duplicate against a race winner is harmless.
+  //
+  // We key the re-entrancy guard by `tab.id + chatId` so flipping
+  // chats in the same tab doesn't lock the second one out, and
+  // re-opening the workspace re-arms it.
   const rpc = useRpc()
   const filledTabRef = useRef<string | null>(null)
   const primaryScopeId = useDb(root => {
@@ -227,9 +257,33 @@ export function ChatPaneContainer({
   })
   useEffect(() => {
     if (activeIsView) return
-    if (activeChat) return
     if (!activeTab) return
     if (activeTab.content.kind !== "chat") return
+
+    // Case 2: the chat exists but its session is still pending.
+    // Fire-and-forget the materialize RPC; the chat record flips to
+    // `ready` on the next replica tick and the surface comes alive
+    // without remounting.
+    if (activeChat && activeChat.session.kind === "pending") {
+      const guardKey = `${activeTab.id}:${activeChat.id}`
+      if (filledTabRef.current === guardKey) return
+      filledTabRef.current = guardKey
+      void rpc.app.sessions
+        .createChatSession({
+          scopeId: activeChat.scopeId,
+          chatId: activeChat.id,
+        })
+        .catch(err =>
+          console.error(
+            "[chat-pane] auto materialize pending chat failed:",
+            err,
+          ),
+        )
+      return
+    }
+
+    // Case 1: no chat record under this tab — fabricate one.
+    if (activeChat) return
     if (filledTabRef.current === activeTab.id) return
     if (!primaryScopeId) return
     filledTabRef.current = activeTab.id

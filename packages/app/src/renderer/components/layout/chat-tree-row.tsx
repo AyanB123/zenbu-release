@@ -6,6 +6,17 @@ export type ChatTreeRowProps = {
   label: string
   isActive: boolean
   isStreaming?: boolean
+  /** When true, render an unread dot on the row. Forwarded to
+   * {@link SidebarRow.hasUnread}. The dot only appears when the row
+   * is NOT the active chat — callers usually compute this as
+   * `session.lastCompletedAt > (session.lastOpenedAt ?? 0) && !isActive`. */
+  hasUnread?: boolean
+  /** When true, render a small pencil glyph on the row indicating
+   * the chat has a saved composer draft. Forwarded to
+   * {@link SidebarRow.hasDraft}. Callers should only set this when
+   * the row is NOT the active chat — the editor itself is the
+   * canonical surface when you're on the chat. */
+  hasDraft?: boolean
   /** Render a shimmer placeholder instead of the label (e.g. while a title is being generated). */
   isGeneratingTitle?: boolean
   timestamp?: number | null
@@ -24,6 +35,8 @@ export function ChatTreeRow({
   label,
   isActive,
   isStreaming,
+  hasUnread,
+  hasDraft,
   isGeneratingTitle,
   timestamp,
   expandable,
@@ -55,6 +68,8 @@ export function ChatTreeRow({
             label={label}
             isActive={isActive}
             isStreaming={isStreaming}
+            hasUnread={hasUnread}
+            hasDraft={hasDraft}
             isGeneratingTitle={isGeneratingTitle}
             timestamp={timestamp}
             onClick={onClick}

@@ -68,16 +68,26 @@
   --destructive: #dc2626;
   --destructive-foreground: #fafafa;
 
-  --border: rgba(0, 0, 0, 0.08);
+  --border: rgba(0, 0, 0, 0.15);
   --input: #d4d4d4;
   --ring: rgba(0, 0, 0, 0.2);
 
   --sidebar: #ebebeb;
   --sidebar-foreground: #171717;
-  --sidebar-accent: #cccccc;
+  /* Active row tint on top of `--sidebar`. Kept deliberately
+   * close in luminance to `--sidebar` so the active row reads
+   * as "selected" without shouting. Shared with the terminal
+   * tab strip's active tab. */
+  --sidebar-accent: #d6d6d6;
   --sidebar-accent-foreground: #171717;
-  --sidebar-border: rgba(0, 0, 0, 0.08);
+  --sidebar-border: rgba(0, 0, 0, 0.15);
   --sidebar-ring: rgba(0, 0, 0, 0.2);
+
+  /* Allotment's `--separator-border` defaults to a darker mid-grey
+   * than our `--border`, so the resize handles read as a heavier
+   * line than every other border in the app. Pin it to `--border`
+   * so every border in the app shares one variable. */
+  --separator-border: var(--border);
 
   /* Active tab merges with the chat pane below — the pane uses
      `bg-background`, so the active tab background must follow. */
@@ -115,16 +125,22 @@
   --destructive: #ef4444;
   --destructive-foreground: #fafafa;
 
-  --border: rgba(255, 255, 255, 0.08);
+  --border: rgba(255, 255, 255, 0.14);
   --input: #3a3a3a;
   --ring: rgba(255, 255, 255, 0.2);
 
   --sidebar: #161616;
   --sidebar-foreground: #ededed;
-  --sidebar-accent: #3a3a3a;
+  /* Active row tint on top of `--sidebar`. Kept deliberately
+   * close in luminance to `--sidebar` so the active row reads
+   * as "selected" without shouting. Shared with the terminal
+   * tab strip's active tab. */
+  --sidebar-accent: #2e2e2e;
   --sidebar-accent-foreground: #fafafa;
-  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-border: rgba(255, 255, 255, 0.14);
   --sidebar-ring: rgba(255, 255, 255, 0.2);
+
+  --separator-border: var(--border);
 
   --tab-active: var(--background);
 
@@ -132,9 +148,15 @@
 }
 
 @layer base {
+  /*
+   * `border-color: var(--border)` lives in
+   * `@hackable-gui/view-theme/tailwind.css` (imported above) so every
+   * plugin iframe gets the same default. We only need the box-sizing
+   * reset here — it's host-shell-specific and not worth lifting into
+   * the shared theme.
+   */
   * {
     box-sizing: border-box;
-    border-color: var(--border);
   }
 
   html,
@@ -198,16 +220,22 @@
   --accent: #141414;
   --accent-foreground: #fafafa;
 
-  --border: rgba(255, 255, 255, 0.1);
+  --border: rgba(255, 255, 255, 0.16);
   --input: #1f1f1f;
   --ring: rgba(255, 255, 255, 0.22);
 
   --sidebar: #000000;
   --sidebar-foreground: #ededed;
-  --sidebar-accent: #262626;
+  /* Active row tint on top of `--sidebar`. Kept deliberately
+   * close in luminance to `--sidebar` so the active row reads
+   * as "selected" without shouting. Shared with the terminal
+   * tab strip's active tab. */
+  --sidebar-accent: #1d1d1d;
   --sidebar-accent-foreground: #fafafa;
-  --sidebar-border: rgba(255, 255, 255, 0.1);
+  --sidebar-border: rgba(255, 255, 255, 0.16);
   --sidebar-ring: rgba(255, 255, 255, 0.22);
+
+  --separator-border: var(--border);
 
   --tab-active: var(--background);
 
@@ -238,25 +266,29 @@
 }
 
 /* Allotment renders its inter-pane separator as a `::before` on each
- * non-first pane with `z-index: 5`. Some pane contents (e.g. the
- * chat pane's `relative z-10` content layer) stack above that, so
- * the separator gets covered. Lift it above app content z-stacking
- * so the border is always continuous.
+ * non-first pane. Two things we need to fix:
  *
- * We also force `background-color` here so the sash color matches the
- * rest of the app's borders (`var(--border)`). Allotment's own
- * `:root { --separator-border: rgba(128,128,128,0.35) }` can win over
- * our `:root` override depending on Vite's final CSS import order, so
- * setting it on the pseudo-element directly is the reliable hook. */
+ * 1. z-index. Some pane contents (e.g. the chat pane's `relative
+ *    z-10` content layer) stack above allotment's `z-index: 5`, so
+ *    the separator gets covered. Lift it above app content
+ *    z-stacking so the border is always continuous.
+ *
+ * 2. Color sync. Allotment ships `--separator-border:
+ *    rgba(128,128,128,0.35)`, which is heavier than the rest of
+ *    the app's borders. We pin `--separator-border` to
+ *    `var(--border)` in the theme blocks above so the resize
+ *    handle line matches every other border. Setting it on the
+ *    theme tokens rather than relying on a pseudo-element
+ *    override avoids the Vite import-order race the previous
+ *    iteration of this file had to work around. */
 [class*="splitView"][class*="separatorBorder"]
   [class*="splitViewView"]:not(:first-child)::before {
   z-index: 50;
-  background-color: var(--border);
 }
 
 /* When a pane is collapsed (allotment removes `split-view-view-visible`),
- * its separator pseudo-element still renders as a stray 1px line at the
- * edge of the container. Hide it so closed panes don't show ghost
+ * its separator pseudo-element still renders as a stray 1px line at
+ * the edge of the container. Hide it so closed panes don't show ghost
  * borders. */
 [class*="splitView"][class*="separatorBorder"]
   [class*="splitViewView"]:not(.split-view-view-visible)::before {

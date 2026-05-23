@@ -1,7 +1,11 @@
 import os from "node:os"
 import path from "node:path"
+import { execFile } from "node:child_process"
+import { promisify } from "node:util"
 import { fileURLToPath } from "node:url"
 import dotenv from "dotenv"
+
+const execFileP = promisify(execFile)
 import { Service } from "@zenbujs/core/runtime"
 import { DbService, RpcService } from "@zenbujs/core/services"
 import { summarizeUserMessage } from "../summaries/summarize-user-message"
@@ -17,7 +21,13 @@ import {
   ModelRegistry,
   SessionManager,
 } from "@earendil-works/pi-coding-agent"
+import {
+  collectExtraAgentsFiles,
+  formatExtraDirsPrompt,
+} from "../lib/extra-dirs"
 import { PiExtensionRegistryService } from "./pi-extension-registry"
+import { ReposService } from "./repos"
+import { SessionActivityService } from "./session-activity"
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai"
 import { nanoid } from "nanoid"
 
@@ -77,6 +87,17 @@ class LiveSession {
    * report can tell apart "write actually failed" from "renderer
    * subscription dropped". */
   lastConcatError: { when: number; message: string } | null = null
+  /** Last-seen snapshot of the owning scope's `extraDirectories`.
+   * The scope-subscription handler diffs against this to figure out
+   * which dirs were added or removed when the user (or another
+   * service) mutates the scope mid-session. Initialised at
+   * `activate()` time. */
+  extraDirsSnapshot: readonly string[] = []
+  /** Cleanup callbacks registered alongside the pi subscription. Run
+   * in order on `dispose()`. Used for things like the db subscription
+   * that watches `extraDirectories` — their lifetime is the same as
+   * the live pi session. */
+  private readonly extraDisposers: Array<() => void> = []
   private readonly unsubscribePi: () => void
 
   constructor(
@@ -87,8 +108,19 @@ class LiveSession {
     this.unsubscribePi = pi.subscribe(event => onEvent(this, event))
   }
 
+  addDisposer(fn: () => void) {
+    this.extraDisposers.push(fn)
+  }
+
   dispose() {
     this.unsubscribePi()
+    for (const fn of this.extraDisposers.splice(0)) {
+      try {
+        fn()
+      } catch (err) {
+        console.warn("[sessions] disposer threw:", err)
+      }
+    }
     this.pi.dispose()
   }
 }
@@ -100,6 +132,8 @@ export class SessionsService extends Service.create({
     summaries: SummariesService,
     rpc: RpcService,
     piExtensionRegistry: PiExtensionRegistryService,
+    repos: ReposService,
+    sessionActivity: SessionActivityService,
   },
 }) {
   private readonly live = new Map<string, LiveSession>()
@@ -246,6 +280,8 @@ export class SessionsService extends Service.create({
       branchSummary: null,
       stats: emptyStats(),
       runStartContextTokens: null,
+      lastOpenedAt: null,
+      lastCompletedAt: null,
       eventLog: eventLogRef as Session["eventLog"],
     }
 
@@ -320,6 +356,8 @@ export class SessionsService extends Service.create({
         branchSummary: null,
         stats: emptyStats(),
         runStartContextTokens: null,
+        lastOpenedAt: null,
+        lastCompletedAt: null,
         eventLog: eventLogRef as Session["eventLog"],
       }
       root.app.chats[chatId] = {
@@ -430,6 +468,8 @@ export class SessionsService extends Service.create({
         branchSummary: null,
         stats: emptyStats(),
         runStartContextTokens: null,
+        lastOpenedAt: null,
+        lastCompletedAt: null,
         eventLog: eventLogRef as Session["eventLog"],
       }
       root.app.chats[chatId] = {
@@ -600,6 +640,8 @@ export class SessionsService extends Service.create({
         branchSummary: null,
         stats: emptyStats(),
         runStartContextTokens: null,
+        lastOpenedAt: null,
+        lastCompletedAt: null,
         eventLog: eventLogRef as Session["eventLog"],
       }
       root.app.chats[chatId] = {
@@ -620,9 +662,10 @@ export class SessionsService extends Service.create({
       const ws = root.app.windowStates[args.windowId]
       if (ws) {
         const workspaceId = parentScope.workspaceId
-        if (ws.selectedWorkspaceId !== workspaceId) {
-          ws.selectedWorkspaceId = workspaceId
-        }
+        // `activeView` carries the workspace id directly — setting
+        // it here both selects the workspace and exits any
+        // non-workspace view (e.g. onboarding) in one step.
+        ws.activeView = { kind: "workspace", workspaceId }
         ws.selectedScopeId = scopeId
         const state = ws.workspacePanes?.[workspaceId]
         if (state && state.panes.length > 0) {
@@ -693,6 +736,190 @@ export class SessionsService extends Service.create({
     await this.ctx.db.client.update(root => {
       delete root.app.sessions[args.sessionId]
     })
+  }
+
+  /**
+   * Move a chat (and its underlying session, if any) into a freshly
+   * created git worktree of the same repo.
+   *
+   *   1. Create the worktree on disk (`git worktree add -b <branch> <path>`)
+   *      via `ReposService.createWorktree`, which also re-syncs the
+   *      repo's worktree list into the DB.
+   *   2. If the chat has a live `AgentSession` that's mid-turn, abort
+   *      it and wait for the interrupt to land. Then dispose the live
+   *      session entirely so the next prompt re-activates against the
+   *      new cwd.
+   *   3. In one DB transaction:
+   *        - Materialize a new `scope` pointing at the new worktree
+   *          directory (same workspace + repo).
+   *        - Flip `chat.scopeId` and (when present) `session.scopeId`
+   *          to the new scope.
+   *        - Update the window's `selectedScopeId` cache when the
+   *          moved chat is the active tab.
+   *
+   * The pi session JSONL on disk is untouched — it lives in
+   * `PI_SESSION_DIR`, not the working directory — so the conversation
+   * history is preserved. Only the cwd that pi's tools execute against
+   * changes, and that happens lazily on the next `ensureLive()`.
+   *
+   * Errors:
+   *   - chat unknown / no scope / scope has no `repoId` → throws.
+   *   - `git worktree add` fails → throws with the git error.
+   */
+  async moveToNewWorktree(args: {
+    chatId: string
+    /** New branch name. Passed straight to `git worktree add -b`. */
+    branch: string
+    /** Absolute path for the new worktree. */
+    worktreePath: string
+    /** Active window id; used to keep `selectedScopeId` in sync when
+     * this chat is currently the active tab. */
+    windowId: string
+    /**
+     * Optional: if the *source* worktree has uncommitted changes,
+     * commit them before creating the new worktree so the new
+     * worktree branches off the post-commit HEAD (carrying the
+     * work forward). When omitted the pending changes stay in the
+     * source worktree as working-tree state and the new worktree
+     * starts from the current HEAD without them. Empty `message`
+     * → auto-generated marker.
+     */
+    commitFirst?: { message: string }
+  }): Promise<{ scopeId: string; directory: string }> {
+    const branch = args.branch.trim()
+    const worktreePath = args.worktreePath.trim()
+    if (!branch) throw new Error("branch name is required")
+    if (!worktreePath) throw new Error("worktree path is required")
+
+    const root0 = this.ctx.db.client.readRoot()
+    const chat = root0.app.chats[args.chatId]
+    if (!chat) throw new Error(`unknown chat ${args.chatId}`)
+    const oldScope = root0.app.scopes[chat.scopeId]
+    if (!oldScope) throw new Error(`unknown scope ${chat.scopeId}`)
+    if (!oldScope.repoId) {
+      throw new Error(
+        "current scope is not a git repo (no repoId on scope)",
+      )
+    }
+
+    // 0. Optional: commit uncommitted changes in the *current*
+    //    worktree before branching, so the new worktree picks them
+    //    up. This answers "do I want to take my pending changes
+    //    with me?". When `commitFirst` is omitted the pending
+    //    changes stay in the source worktree's working directory
+    //    (the original behavior).
+    if (args.commitFirst) {
+      const message =
+        args.commitFirst.message.trim() ||
+        `auto-generated commit (worktree branch \`${branch}\`)`
+      try {
+        await execFileP("git", ["-C", oldScope.directory, "add", "-A"])
+        await execFileP("git", [
+          "-C",
+          oldScope.directory,
+          "commit",
+          "-m",
+          message,
+        ])
+      } catch (err) {
+        // "nothing to commit" can happen if the renderer detected
+        // dirty state that was tidied between then and now — not
+        // really an error, just a no-op.
+        const e = err as { stderr?: string; stdout?: string; message?: string }
+        const detail = (e.stderr ?? e.stdout ?? e.message ?? "").toString()
+        if (!/nothing to commit/i.test(detail)) {
+          throw new Error(detail || "pre-worktree commit failed")
+        }
+      }
+    }
+
+    // 1. Create the worktree on disk. ReposService handles
+    //    re-syncing the repo's worktree list into the DB.
+    const createRes = await this.ctx.repos.createWorktree({
+      repoId: oldScope.repoId,
+      worktreePath,
+      branch,
+      // No sourceRef → git defaults to current HEAD of the probe
+      // worktree, which is what users expect ("branch off where I am").
+      createBranch: true,
+    })
+    if (!createRes.ok) {
+      throw new Error(createRes.error ?? "git worktree add failed")
+    }
+
+    // 2. If the chat has a ready session, interrupt + dispose any
+    //    live AgentSession so the next prompt re-activates with the
+    //    new cwd. (Pi's tools capture cwd in closures at construction
+    //    time — there's no in-place cwd swap.)
+    const sessionId =
+      chat.session.kind === "ready" ? chat.session.sessionId : null
+    if (sessionId) {
+      const live = this.live.get(sessionId)
+      if (live) {
+        if (live.pi.isStreaming) {
+          // Await the interrupt before tearing down so we don't drop
+          // tool output mid-stream and leave pi in a weird state.
+          await live.pi.abort()
+        }
+        live.dispose()
+        this.live.delete(sessionId)
+      }
+    }
+
+    // 3. Single transactional flip: new scope + repoint chat + repoint
+    //    session + window's selectedScopeId cache. Treats the move as
+    //    a copy-and-rm (per design): old scope is left intact so any
+    //    other chats living in it (or the sidebar's group heuristic)
+    //    keep working. Sidebar already hides empty scope groups.
+    const newScopeId = nanoid()
+    const now = Date.now()
+    await this.ctx.db.client.update(root => {
+      // "Move chat to new worktree" creates a secondary scope by
+      // construction — the user is forking off from an existing
+      // one. Always start unpinned; the main worktree's pin is
+      // already established on the original scope.
+      root.app.scopes[newScopeId] = {
+        id: newScopeId,
+        workspaceId: oldScope.workspaceId,
+        directory: worktreePath,
+        repoId: oldScope.repoId,
+        extraDirectories: [],
+        createdAt: now,
+        archived: false,
+        completed: false,
+        archivedAt: null,
+        completedAt: null,
+        pinnedAt: null,
+        unpinnedAt: null,
+      }
+      const c = root.app.chats[args.chatId]
+      if (c) c.scopeId = newScopeId
+      if (sessionId) {
+        const s = root.app.sessions[sessionId]
+        if (s) s.scopeId = newScopeId
+      }
+      // Keep the active window's denormalized scope cache in sync if
+      // this chat is the one currently visible. Other windows /
+      // workspaces fix themselves up the next time the user clicks
+      // around — selectedScopeId is a hint, not a source of truth.
+      const ws = root.app.windowStates[args.windowId]
+      if (ws && ws.activeView.kind === "workspace") {
+        const state = ws.workspacePanes?.[ws.activeView.workspaceId]
+        const activePane = state?.panes.find(p => p.id === state.activePaneId)
+        const activeTab = activePane?.tabs.find(
+          t => t.id === activePane.activeTabId,
+        )
+        if (
+          activeTab &&
+          activeTab.content.kind === "chat" &&
+          activeTab.content.chatId === args.chatId
+        ) {
+          ws.selectedScopeId = newScopeId
+        }
+      }
+    })
+
+    return { scopeId: newScopeId, directory: worktreePath }
   }
 
   async subscribe(args: { sessionId: string; subscriberId: string }) {
@@ -1332,10 +1559,48 @@ export class SessionsService extends Service.create({
     const additionalExtensionPaths = this.ctx.piExtensionRegistry
       .list()
       .map(e => e.path)
+    const agentDir = getAgentDir()
+    const scopeId = record.scopeId
+    // The two override closures below intentionally re-read the scope
+    // from the db on every call rather than capturing the snapshot
+    // taken at activation time. That way, a later
+    // `resourceLoader.reload()` (fired by the `scopes` subscription
+    // we install below) picks up dirs the user (or another service)
+    // appended to `extraDirectories` without us having to rebuild
+    // the loader from scratch.
+    const getExtraDirs = (): readonly string[] => {
+      const s = this.ctx.db.client.readRoot().app.scopes[scopeId]
+      return s?.extraDirectories ?? []
+    }
     const resourceLoader = new DefaultResourceLoader({
       cwd: scope.directory,
-      agentDir: getAgentDir(),
+      agentDir,
       additionalExtensionPaths,
+      // Concatenate pi's primary-cwd AGENTS.md scan with one
+      // `loadProjectContextFiles` call per extra dir. Pi feeds
+      // the resulting array straight into the system prompt's
+      // "<project_context>" block, so adding entries here is
+      // semantically equivalent to having one giant AGENTS.md at
+      // the cwd that imported all the others.
+      agentsFilesOverride: base => {
+        const extras = collectExtraAgentsFiles(
+          getExtraDirs(),
+          agentDir,
+          base.agentsFiles,
+        )
+        return extras.length === 0
+          ? base
+          : { agentsFiles: [...base.agentsFiles, ...extras] }
+      },
+      // Append a markdown section that explicitly *names* the extra
+      // dirs so the agent treats them as in-bounds for edits, not
+      // just as readable context. Pi places each appendSystemPrompt
+      // entry after the default system prompt; an empty list means
+      // we contribute nothing.
+      appendSystemPromptOverride: base => {
+        const section = formatExtraDirsPrompt(getExtraDirs())
+        return section ? [...base, section] : base
+      },
     })
     await resourceLoader.reload()
 
@@ -1356,9 +1621,96 @@ export class SessionsService extends Service.create({
     const live = new LiveSession(sessionId, session, (l, e) =>
       this.onPiEvent(l, e),
     )
+    live.extraDirsSnapshot = [...scope.extraDirectories]
     this.live.set(sessionId, live)
+
+    // React to runtime changes in `extraDirectories` for this
+    // scope. The DB replica fans changes out to every process
+    // instantly, so a renderer-side mutation (or another service
+    // calling `db.client.update`) lands here without an RPC round
+    // trip. Diff against the cached snapshot to figure out what
+    // changed; on any change reload the resource loader (so the
+    // overrides above see the new list / load the new AGENTS.md)
+    // and drop a quiet "aside" into pi so the agent gets a
+    // mid-session notification.
+    const unsubscribeScopes = this.ctx.db.client.app.scopes.subscribe(() => {
+      void this.onScopesChanged(live, scopeId)
+    })
+    live.addDisposer(unsubscribeScopes)
+
     await this.syncRuntime(live)
     return live
+  }
+
+  /**
+   * Compare the live session's cached `extraDirsSnapshot` with the
+   * current `scope.extraDirectories`. If they differ, reload the
+   * resource loader (so its overrides re-read the live list and
+   * re-scan AGENTS.md files) and send a quiet aside to pi so the
+   * agent learns about the change on its next turn without us
+   * interrupting the current one.
+   */
+  private async onScopesChanged(
+    live: LiveSession,
+    scopeId: string,
+  ): Promise<void> {
+    const scope = this.ctx.db.client.readRoot().app.scopes[scopeId]
+    if (!scope) return
+    const before = live.extraDirsSnapshot
+    const after = scope.extraDirectories
+    const beforeSet = new Set(before)
+    const afterSet = new Set(after)
+    const added = after.filter(d => !beforeSet.has(d))
+    const removed = before.filter(d => !afterSet.has(d))
+    if (added.length === 0 && removed.length === 0) return
+    live.extraDirsSnapshot = [...after]
+    try {
+      await live.pi.resourceLoader.reload()
+    } catch (err) {
+      console.warn(
+        "[sessions] resourceLoader.reload() after extra-dirs change failed:",
+        err,
+      )
+    }
+    const lines: string[] = []
+    if (added.length > 0) {
+      lines.push(
+        `The following working directories were added to this session and are now available to you:`,
+      )
+      for (const dir of added) lines.push(`- \`${dir}\``)
+    }
+    if (removed.length > 0) {
+      if (lines.length > 0) lines.push("")
+      lines.push(
+        `The following working directories were removed and are no longer in scope:`,
+      )
+      for (const dir of removed) lines.push(`- \`${dir}\``)
+    }
+    if (added.length > 0) {
+      lines.push("")
+      lines.push(
+        "Their AGENTS.md files (if any) have been merged into your context. You may read, edit, and run commands in these directories as needed.",
+      )
+    }
+    const content = lines.join("\n")
+    try {
+      await live.pi.sendCustomMessage(
+        {
+          customType: "extraDirsChanged",
+          content,
+          // `display: false` keeps this aside out of the user-visible
+          // chat surface. It's purely model-side context.
+          display: false,
+          details: { added, removed },
+        },
+        { deliverAs: "nextTurn" },
+      )
+    } catch (err) {
+      console.warn(
+        "[sessions] sendCustomMessage(extraDirsChanged) failed:",
+        err,
+      )
+    }
   }
 
   private async onPiEvent(live: LiveSession, event: AgentSessionEvent) {
@@ -1454,9 +1806,20 @@ export class SessionsService extends Service.create({
         s.runStartContextTokens = s.stats.contextUsage?.tokens ?? 0
       })
     } else if (event.type === "agent_end") {
+      // Stamp `lastCompletedAt` so the unread-dot logic can detect
+      // a turn finished. If the user is currently viewing the
+      // session (tracked by `SessionActivityService`), also bump
+      // `lastOpenedAt` so the dot never appears on a chat they're
+      // already looking at. Anyone else (other windows, sidebar
+      // rows) sees the dot until they focus the chat.
+      const isViewed = this.ctx.sessionActivity.isViewed(live.sessionId)
+      const now = Date.now()
       await this.ctx.db.client.update(root => {
         const s = root.app.sessions[live.sessionId]
-        if (s) s.runStartContextTokens = null
+        if (!s) return
+        s.runStartContextTokens = null
+        s.lastCompletedAt = now
+        if (isViewed) s.lastOpenedAt = now
       })
     }
 

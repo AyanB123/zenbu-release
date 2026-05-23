@@ -1,5 +1,13 @@
 import type { ReactNode } from "react";
-import { SIDEBAR_FOOTER_HEIGHT } from "./sidebar-footer";
+import { SIDEBAR_FOOTER_FADE, SIDEBAR_FOOTER_HEIGHT } from "./sidebar-footer";
+
+// Reserve space for both the footer slot AND its gradient fade so that
+// when the list is scrolled to the bottom, the last row sits above the
+// fade instead of being washed out by it. Without the extra fade pad,
+// content that *just barely* overflows is permanently dimmed because
+// you can't scroll past the end of the content to push the last row
+// clear of the gradient.
+const SIDEBAR_BODY_BOTTOM_PAD = SIDEBAR_FOOTER_HEIGHT + SIDEBAR_FOOTER_FADE;
 
 export type SidebarProps = {
   header?: ReactNode;
@@ -64,14 +72,14 @@ export function Sidebar({
         {bodyVariant === "rows" ? (
           <div
             className="absolute inset-0 overflow-auto"
-            style={{ paddingBottom: SIDEBAR_FOOTER_HEIGHT }}
+            style={{ paddingBottom: SIDEBAR_BODY_BOTTOM_PAD }}
           >
             <div className="px-1.5">{children}</div>
           </div>
         ) : (
           <div
             className="absolute inset-0"
-            style={{ paddingBottom: SIDEBAR_FOOTER_HEIGHT }}
+            style={{ paddingBottom: SIDEBAR_BODY_BOTTOM_PAD }}
           >
             {children}
           </div>

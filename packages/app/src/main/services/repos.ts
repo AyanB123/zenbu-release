@@ -1,5 +1,7 @@
 import crypto from "node:crypto"
 import fs from "node:fs"
+import fsp from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
 import { execFile } from "node:child_process"
@@ -64,6 +66,62 @@ export class ReposService extends Service.create({
       for (const w of this.watchers.values()) this.tearDownWatcher(w)
       this.watchers.clear()
     })
+  }
+
+  /**
+   * Creates a fresh empty directory at `relativePath` (resolved against
+   * `$HOME` if it starts with `~` or is otherwise relative) and returns
+   * the absolute path. Used by the onboarding screen's "New project"
+   * flow. We intentionally don't `git init` — the user can do that
+   * later. The workspace machinery handles non-git directories fine.
+   */
+  async createEmptyProject(args: {
+    relativePath: string
+  }): Promise<
+    | { ok: true; directory: string }
+    | { ok: false; error: string }
+  > {
+    const raw = args.relativePath?.trim()
+    if (!raw) return { ok: false, error: "Enter a project path" }
+
+    const home = os.homedir()
+    // Normalise leading `~` (with or without separator) to $HOME.
+    let resolved: string
+    if (raw === "~" || raw.startsWith("~/")) {
+      resolved = path.join(home, raw.slice(1).replace(/^\/+/, ""))
+    } else if (path.isAbsolute(raw)) {
+      resolved = raw
+    } else {
+      resolved = path.join(home, raw)
+    }
+    resolved = path.normalize(resolved)
+
+    const name = path.basename(resolved)
+    if (!name || name === "." || name === "/") {
+      return { ok: false, error: "Project name is required" }
+    }
+    // Guard against shell-unfriendly names. Allow letters / digits /
+    // dashes / dots / underscores / spaces.
+    if (!/^[A-Za-z0-9._\- ]+$/.test(name)) {
+      return {
+        ok: false,
+        error: "Project name can only contain letters, numbers, spaces, '.', '_', '-'",
+      }
+    }
+
+    if (fs.existsSync(resolved)) {
+      return { ok: false, error: `Folder already exists: ${resolved}` }
+    }
+
+    try {
+      await fsp.mkdir(resolved, { recursive: true })
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : String(err ?? "mkdir failed")
+      return { ok: false, error: message }
+    }
+
+    return { ok: true, directory: resolved }
   }
 
   async cloneFromUrl(args: {

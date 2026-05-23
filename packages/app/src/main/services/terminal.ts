@@ -49,6 +49,11 @@ type TerminalEntry = {
   /** Append-only chunks of recent pty output, capped at REPLAY_BUFFER_BYTES. */
   buffer: string[]
   bufferBytes: number
+  /** Monotonic counter that increments once per `pty.onData` chunk.
+   * Mirrored on the event payload + reported back from `attach()` as
+   * `lastSeq`, so the renderer can dedupe events that overlap with
+   * the replay buffer. */
+  seq: number
   /** Last title pushed to the DB (used to dedupe writes). */
   lastTitle: string
   pendingTitle: string | null
@@ -134,12 +139,20 @@ export class TerminalService extends Service.create({
 
   /** Attach to an existing terminal, spawning the underlying pty lazily if
    * it hasn't been started in this process (e.g. fresh launch with restored
-   * DB state). Returns a replay string of the most recent output. */
+   * DB state). Returns a replay string of the most recent output plus the
+   * `lastSeq` that replay corresponds to, so the renderer can drop any
+   * concurrently-arriving `terminalData` events whose `seq` is already in
+   * the replay. */
   async attach(args: {
     terminalId: string
     cols?: number
     rows?: number
-  }): Promise<{ terminalId: string; cwd: string; replay: string }> {
+  }): Promise<{
+    terminalId: string
+    cwd: string
+    replay: string
+    lastSeq: number
+  }> {
     let entry = this.terminals.get(args.terminalId)
     if (!entry) {
       const record = this.ctx.db.client.readRoot().app.terminals[args.terminalId]
@@ -155,10 +168,25 @@ export class TerminalService extends Service.create({
         entry.pty.resize(cols, rows)
       } catch {}
     }
+    // Trim the leading partial line: the rolling buffer is byte-
+    // capped, not line-aligned, so its first bytes are typically
+    // mid-line. Writing them verbatim into a fresh xterm leaves
+    // garbage characters and a stray zsh PROMPT_EOL_MARK (the
+    // little `%` in reverse video) at the top-left on every
+    // attach. Skipping to the first `\n` gives the replay a clean
+    // line-aligned start. If the buffer happens to have no
+    // newlines at all (very rare — a single short partial line),
+    // fall through and send it as-is.
+    let replay = entry.buffer.join("")
+    const firstNl = replay.indexOf("\n")
+    if (firstNl >= 0 && firstNl < replay.length - 1) {
+      replay = replay.slice(firstNl + 1)
+    }
     return {
       terminalId: entry.id,
       cwd: entry.cwd,
-      replay: entry.buffer.join(""),
+      replay,
+      lastSeq: entry.seq,
     }
   }
 
@@ -186,13 +214,32 @@ export class TerminalService extends Service.create({
    * unawaited afterwards. */
   async dispose(args: { terminalId: string }) {
     await this.ctx.db.client.update(root => {
-      delete root.app.terminals[args.terminalId]
+      // NOTE: `delete root.app.terminals[id]` looks correct but is a
+      // silent no-op against kyju's recording proxy — the proxy has
+      // `get`/`set` traps but no `deleteProperty` trap, so the
+      // `delete` mutates the local snapshot without emitting an op.
+      // Other replicas never hear about it and the local snapshot is
+      // overwritten on the next round-trip. We work around this by
+      // *assigning* a fresh object that omits the deleted key, which
+      // routes through the `set` trap and is recorded as a single
+      // `root.set` op at the parent path. Same pattern for the
+      // `scopeLastTerminal` cleanup below.
+      const nextTerminals = { ...root.app.terminals }
+      delete nextTerminals[args.terminalId]
+      root.app.terminals = nextTerminals
       for (const ws of Object.values(root.app.windowStates)) {
         const map = ws.scopeLastTerminal
         if (!map) continue
+        let changed = false
+        const nextMap: Record<string, string> = {}
         for (const scopeId of Object.keys(map)) {
-          if (map[scopeId] === args.terminalId) delete map[scopeId]
+          if (map[scopeId] === args.terminalId) {
+            changed = true
+            continue
+          }
+          nextMap[scopeId] = map[scopeId]!
         }
+        if (changed) ws.scopeLastTerminal = nextMap
       }
     })
     const entry = this.terminals.get(args.terminalId)
@@ -244,6 +291,7 @@ export class TerminalService extends Service.create({
       pty,
       buffer: [],
       bufferBytes: 0,
+      seq: 0,
       lastTitle: currentTitle,
       pendingTitle: null,
       titleFlushTimer: null,
@@ -260,9 +308,10 @@ export class TerminalService extends Service.create({
         const dropped = entry.buffer.shift()!
         entry.bufferBytes -= dropped.length
       }
+      entry.seq += 1
       const title = extractTitle(data)
       if (title != null) this.scheduleTitleUpdate(entry, title)
-      this.ctx.rpc.emit.app.terminalData({ terminalId, data })
+      this.ctx.rpc.emit.app.terminalData({ terminalId, data, seq: entry.seq })
     })
     pty.onExit(({ exitCode, signal }) => {
       this.ctx.rpc.emit.app.terminalExit({

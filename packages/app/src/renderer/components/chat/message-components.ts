@@ -110,6 +110,43 @@ export type CloneMarkerProps = {
   timestamp: number
 }
 
+export type TurnSummaryProps = {
+  /** Files modified during this turn, ordered by first-edit time.
+   * `editCount` includes repeated edits to the same file (each
+   * successful `edit` / `write` tool execution counts once).
+   * `op` is the first observed operation — `create` if the file
+   * was first touched with `write`, `edit` if it was first touched
+   * with `edit`. */
+  files: {
+    path: string
+    editCount: number
+    op: "create" | "edit"
+    /** Lines added across every successful op for this path.
+     * Drives the blue `+N` (create) or green `+N` (edit) badge
+     * on the per-file card. */
+    additions: number
+    /** Lines removed across every successful op for this path.
+     * Always 0 for `create`. Drives the red `-N` badge for edits. */
+    removals: number
+  }[]
+  /** Worktree directory the chat is anchored at, forwarded as the
+   * `directory` arg to `rpc.app.gitTree.openDiff(...)`. Null when
+   * the chat has no live scope yet — the renderer hides the card
+   * in that case so we never open a diff in the wrong worktree. */
+  directory: string | null
+  /** Workspace the chat owning this card lives in. Forwarded to
+   * `openDiff` so the shell can switch to (or stay on) the right
+   * workspace when splitting the diff pane. Null when the chat
+   * has no live scope; renderer hides the card in that case. */
+  workspaceId: string | null
+  /** Scope (worktree) the chat owning this card lives in. The
+   * shell pins `selectedScopeId` to this value after opening the
+   * diff pane so the sidebar / commit button don't drift to the
+   * workspace's primary scope. Null when the chat has no live
+   * scope yet. */
+  scopeId: string | null
+}
+
 export type MessageComponents = {
   UserMessage: ComponentType<UserMessageProps>
   AssistantMessage: ComponentType<AssistantMessageProps>
@@ -120,4 +157,5 @@ export type MessageComponents = {
   Loading: ComponentType<LoadingProps>
   Interrupted: ComponentType<InterruptedProps>
   CloneMarker: ComponentType<CloneMarkerProps>
+  TurnSummary: ComponentType<TurnSummaryProps>
 }

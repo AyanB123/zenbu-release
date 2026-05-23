@@ -15,6 +15,7 @@ type TabDef = {
 const TABS: TabDef[] = [
   { id: "agent", label: "Agents", icon: <AgentIcon /> },
   { id: "pi-sessions", label: "Pi Sessions", icon: <PiSessionsIcon /> },
+  { id: "extra-dirs", label: "Extra directories", icon: <ExtraDirsIcon /> },
 ]
 
 export function LeftSidebarTabBar({ active, onSelect }: LeftSidebarTabBarProps) {
@@ -92,6 +93,29 @@ function PiSessionsIcon() {
       <path d="M5 14h8a3 3 0 0 1 3 3v0" />
       <circle cx="18" cy="10" r="2" />
       <circle cx="19" cy="17" r="2" />
+    </svg>
+  )
+}
+
+/**
+ * Stacked-folders glyph for the "extra directories" tab. Two
+ * offset folders read as "more than one location", which is what
+ * `scope.extraDirectories` represents semantically.
+ */
+function ExtraDirsIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M3 8a2 2 0 0 1 2-2h3l2 2h7a2 2 0 0 1 2 2v1" />
+      <path d="M6 11a2 2 0 0 1 2-2h3l2 2h6a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2z" />
     </svg>
   )
 }

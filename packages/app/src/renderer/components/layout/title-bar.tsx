@@ -46,7 +46,7 @@ export function TitleBar({ label, left, right, center }: TitleBarProps) {
         )}
       </div>
       <div
-        className="relative ml-auto flex items-center gap-0.5"
+        className="relative ml-auto flex items-center gap-1.5"
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       >
         {right}

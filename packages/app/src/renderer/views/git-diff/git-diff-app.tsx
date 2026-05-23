@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { useRpc, useViewArgs } from "@zenbujs/core/react"
 import { useThemeSync } from "@/lib/theme"
 import { DiffViewer } from "@/views/pr/components/diff-viewer"
+import { FilePreview } from "@/views/file-tree/file-preview"
 import type { GitFileStatus, GitStatus } from "@/views/pr/types"
 
 type GitDiffArgs = {
@@ -46,12 +47,21 @@ function GitDiffPane({ directory, path }: { directory: string; path: string }) {
     return null
   }
   if (file === null) {
+    // No git diff for this path (file is clean, was just committed, or
+    // simply isn't tracked as changed). Fall back to a plain read-only
+    // view of the file's current contents so the pane is still useful.
     return (
-      <Placeholder>
-        <span className="font-mono">{path}</span>
-        <br />
-        No changes to show. The file may have been committed or discarded.
-      </Placeholder>
+      <div className="relative flex h-full min-h-0 w-full flex-col bg-background">
+        <div className="flex h-7 shrink-0 items-center gap-2 border-b bg-background px-3 text-[11.5px] text-muted-foreground">
+          <span className="truncate font-mono">{path}</span>
+          <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[10px]">
+            no changes
+          </span>
+        </div>
+        <div className="min-h-0 flex-1">
+          <FilePreview directory={directory} path={path} />
+        </div>
+      </div>
     )
   }
 

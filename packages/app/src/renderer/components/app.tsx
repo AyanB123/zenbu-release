@@ -7,7 +7,8 @@ import { Settings } from "./settings";
 import { useThemeSync } from "@/lib/theme";
 import {
   selectWorkspaceInRoot,
-  useActiveWorkspaceId,
+  useActiveView,
+  useShowOnboardingView,
   useWindowId,
 } from "@/lib/window-state";
 
@@ -15,28 +16,36 @@ export function App() {
   const workspaces = useDb((root) =>
     Object.values(root.app.workspaces).filter((w) => !w.archived),
   );
-  const activeWorkspaceId = useActiveWorkspaceId();
+  const activeView = useActiveView();
   const windowId = useWindowId();
   const dbClient = useDbClient();
+  const showOnboardingView = useShowOnboardingView();
   const [settingsOpen, setSettingsOpen] = useState(false);
   useThemeSync();
 
-  // Auto-select a workspace on boot when the window has none or the
-  // remembered one was deleted. Picks the newest non-archived workspace.
+  // Reconcile `activeView` with the set of available workspaces.
+  //
+  //   - `onboarding` is intentional user state (rail "+"), so we
+  //     never override it. On a fresh install with no workspaces
+  //     it's also the schema default, which is correct.
+  //   - `workspace` pointing at a missing / archived workspace can
+  //     happen after delete / archive. Pick the newest remaining
+  //     non-archived workspace, or drop to onboarding when none
+  //     are left.
   useEffect(() => {
-    if (
-      activeWorkspaceId &&
-      workspaces.some((w) => w.id === activeWorkspaceId)
-    )
-      return;
+    if (activeView.kind !== "workspace") return;
+    if (workspaces.some((w) => w.id === activeView.workspaceId)) return;
     const newest = workspaces
       .slice()
       .sort((a, b) => b.createdAt - a.createdAt)[0];
-    if (!newest) return;
-    void dbClient.update((root) => {
-      selectWorkspaceInRoot(root, windowId, newest.id);
-    });
-  }, [workspaces, activeWorkspaceId, dbClient, windowId]);
+    if (newest) {
+      void dbClient.update((root) => {
+        selectWorkspaceInRoot(root, windowId, newest.id);
+      });
+    } else {
+      showOnboardingView();
+    }
+  }, [workspaces, activeView, dbClient, windowId, showOnboardingView]);
 
   return (
     <>
