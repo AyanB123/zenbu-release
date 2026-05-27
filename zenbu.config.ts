@@ -65,6 +65,7 @@ export default defineConfig({
       "plugins/*/assets/**",
       "plugins/app/src/**",
       "plugins/app/migrations/**",
+      "plugins/app/zenbu.plugin.ts",
       "plugins/app/package.json",
       "plugins/app/tsconfig.json",
       "plugins/app/vite.config.ts",
