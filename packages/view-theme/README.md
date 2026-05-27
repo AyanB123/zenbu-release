@@ -1,4 +1,4 @@
-# @hackable-gui/view-theme
+# @zenbu/view-theme
 
 Tailwind v4 `@theme` mapping that wires shadcn-style utility classes
 onto the host design tokens that **zenbu auto-injects into every plugin
@@ -18,7 +18,7 @@ mode toggles, custom palettes, anything the host changes at runtime.
 ```css
 /* In your plugin view's stylesheet (e.g. src/views/.../styles.css) */
 @import "tailwindcss";
-@import "@hackable-gui/view-theme/tailwind.css";
+@import "@zenbu/view-theme/tailwind.css";
 
 /* From here on, shadcn class names "just work" with the host theme. */
 ```

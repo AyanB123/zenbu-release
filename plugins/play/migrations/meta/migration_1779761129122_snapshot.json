@@ -1,0 +1,12 @@
+{
+  "id": "68dfcf8b-d7e2-4b50-adf8-b9477cad9eb6",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "fields": {
+    "configs": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "8a5d0f5e66ed312a",
+      "default": {}
+    }
+  }
+}

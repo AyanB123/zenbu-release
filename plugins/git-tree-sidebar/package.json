@@ -1,0 +1,22 @@
+{
+  "name": "@zenbu/git-tree-sidebar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Right-sidebar plugin: tree of the active scope's changed files as a component view (rendering: 'component'). Caches git status on demand; clicking a file routes through `rpc.app.gitTree.openDiff`.",
+  "exports": {
+    ".": "./zenbu.plugin.ts"
+  },
+  "dependencies": {
+    "@pierre/trees": "1.0.0-beta.3",
+    "@zenbujs/core": "^0.0.27",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.6.0"
+  }
+}

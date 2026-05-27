@@ -5,6 +5,7 @@
   "type": "module",
   "main": "node_modules/@zenbujs/core/dist/setup-gate.mjs",
   "scripts": {
+    "pnpm:devPreinstall": "node scripts/ensure-linked-overrides.mjs",
     "dev": "zen dev",
     "build:source": "zen build:source",
     "build:electron": "zen build:electron",
@@ -18,7 +19,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@zenbujs/core": "^0.0.25"
+    "@zenbujs/core": "^0.0.27"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

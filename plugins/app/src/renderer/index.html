@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <script>
+      ;(function () {
+        var c = console
+        if (!c || typeof c.createTask !== 'function') return
+        function NoopTask() {}
+        NoopTask.prototype.run = function (fn) {
+          return fn.apply(this, Array.prototype.slice.call(arguments, 1))
+        }
+        var patched = function () {
+          return new NoopTask()
+        }
+        patched.__disabled__ = true
+        c.__createTaskOriginal__ = c.createTask
+        c.createTask = patched
+      })()
+    </script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Read by Zenbu main process before the renderer paints, so the
+         native BaseWindow/WebContents background matches the eventual
+         HTML background even when splash.html is absent. -->
+    <meta name="zenbu-bg" content="#f4f4f4" media="(prefers-color-scheme: light)" />
+    <meta name="zenbu-bg" content="#1a1a1a" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
+    <style>
+      html,
+      body,
+      #root {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        background: #f4f4f4;
+        color-scheme: light dark;
+      }
+      @media (prefers-color-scheme: dark) {
+        html,
+        body,
+        #root {
+          background: #1a1a1a;
+        }
+      }
+      /* Initial #root paint, visible from the moment Vite serves
+         index.html until React mounts (and again replaced by the
+         <IconFallback> while ZenbuProvider connects). Keeps the icon
+         on screen continuously through the splash → renderer handoff —
+         no skeleton flash. React clears these children on mount.
+
+         IMPORTANT: do NOT claim `-webkit-app-region: drag` here. A
+         full-viewport drag claim during boot lingers in Electron's
+         drag-region snapshot — even after React replaces these
+         children, the OS-level drag rect for this window can still
+         report "the whole window is a title bar", so every click in
+         the running app turns into a window-move. Drag is provided
+         by the dedicated `.zenbu-boot-drag-strip` at the top, which
+         is the same height (30px) and position as the real title
+         bar's drag rect, so the handoff to <TitleBar /> doesn't even
+         change the OS drag region. */
+      .zenbu-boot-icon-wrap {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
+        -webkit-app-region: no-drag;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .zenbu-boot-drag-strip {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 30px;
+        -webkit-app-region: drag;
+        pointer-events: none;
+      }
+      .zenbu-boot-icon {
+        width: 160px;
+        height: 160px;
+        /* Match splash.html so the icon downscales identically across
+           the splash → index.html → IconFallback handoffs and doesn't
+           read as a size change between paints. */
+        image-rendering: -webkit-optimize-contrast;
+        pointer-events: none;
+      }
+    </style>
+    <title>Zenbu App</title>
+  </head>
+  <body>
+    <div id="root">
+      <div class="zenbu-boot-icon-wrap">
+        <img class="zenbu-boot-icon" src="./icon.png" alt="" />
+        <div class="zenbu-boot-drag-strip" aria-hidden="true"></div>
+      </div>
+    </div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

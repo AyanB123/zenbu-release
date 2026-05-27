@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Mirror index.html's viewport so CSS pixels map 1:1 to the
+         window's content area. Without this, Chromium falls back to
+         a ~980px "wide viewport" layout and then scales the result
+         up to fit the actual window — so the 160px icon here would
+         paint at ~179 device px on a 1100px-wide window while the
+         same 160px declaration in index.html paints at 160 device
+         px. The visible result was the icon "shrinking a hair" on
+         the splash → main handoff. Same units across both pages
+         now means same paint size. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Read by Zenbu main process so the native BaseWindow's
+         backgroundColor matches splash content (no mismatched frame
+         between window open and WebContentsView paint). Mirrors
+         index.html so the handoff splash → renderer is seamless. -->
+    <meta name="zenbu-bg" content="#f4f4f4" media="(prefers-color-scheme: light)" />
+    <meta name="zenbu-bg" content="#1a1a1a" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Zenbu</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        background: #f4f4f4;
+        color-scheme: light dark;
+      }
+      @media (prefers-color-scheme: dark) {
+        html,
+        body {
+          background: #1a1a1a;
+        }
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        /* DO NOT claim `-webkit-app-region: drag` on body. This page
+           is loaded into a splash WebContentsView that the framework
+           leaves attached behind the renderer view when it mounts
+           (`WindowService.openView` doesn't track the splash view
+           and so doesn't `removeChildView` it). The native window's
+           drag region is the UNION of every attached view's drag
+           rects, so a full-body `drag` here keeps the whole window
+           reporting as a title bar long after the splash is visually
+           occluded — every click in the running app then turns into
+           a window-move. The dedicated 30px top strip below claims
+           drag for just the title-bar region, lining up exactly
+           with `<TitleBar />` in the renderer so the union doesn't
+           expand once the renderer is on screen. */
+        -webkit-app-region: no-drag;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .drag-strip {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        /* Matches TITLE_BAR_HEIGHT in components/layout/title-bar.tsx
+           so the splash drag rect and the renderer's title-bar drag
+           rect occupy the same pixels — the union doesn't change
+           shape when the renderer paints on top. */
+        height: 30px;
+        -webkit-app-region: drag;
+        pointer-events: none;
+      }
+      .icon {
+        width: 160px;
+        height: 160px;
+        image-rendering: -webkit-optimize-contrast;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <img class="icon" src="./icon.png" alt="" />
+    <div class="drag-strip" aria-hidden="true"></div>
+  </body>
+</html>

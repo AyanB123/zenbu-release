@@ -1,5 +1,5 @@
 /*
- * @hackable-gui/view-theme/tailwind.css
+ * @zenbu/view-theme/tailwind.css
  *
  * Tailwind v4 `@theme inline` mapping that wires shadcn-style utility
  * classes onto the host design tokens that zenbu auto-injects into
@@ -10,14 +10,14 @@
  * Usage \u2014 plugin view stylesheet:
  *
  *     @import "tailwindcss";
- *     @import "@hackable-gui/view-theme/tailwind.css";
+ *     @import "@zenbu/view-theme/tailwind.css";
  *
  * Usage \u2014 host app stylesheet (single source of truth for the
  * shadcn-standard mapping; add host-specific tokens in your own
  * `@theme inline` block after this import):
  *
  *     @import "tailwindcss";
- *     @import "@hackable-gui/view-theme/tailwind.css";
+ *     @import "@zenbu/view-theme/tailwind.css";
  *     @theme inline {
  *       --color-sidebar: var(--sidebar);
  *       \u2026app-specific extras\u2026

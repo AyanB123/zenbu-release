@@ -1,0 +1,14 @@
+{
+  "id": "7f17e43c-66fa-4aaf-813a-d38ef74be5c7",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "fields": {
+    "ui": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "44429e4c1eb150cc",
+      "default": {
+        "lastTab": "general"
+      }
+    }
+  }
+}

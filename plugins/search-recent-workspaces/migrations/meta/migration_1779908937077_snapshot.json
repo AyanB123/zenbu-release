@@ -1,0 +1,12 @@
+{
+  "id": "691b1bff-e64f-4d23-b936-d55c4b48305c",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "fields": {
+    "lastVisitedAt": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "a618644060724db6",
+      "default": {}
+    }
+  }
+}

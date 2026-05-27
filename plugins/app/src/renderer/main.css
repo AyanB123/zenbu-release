@@ -1,0 +1,640 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+/* Inlined here (instead of being imported from main.tsx) so the
+ * `@tailwindcss/vite` plugin doesn't run its full compiler+scanner
+ * setup on a second CSS id. See main.tsx for the back-reference. */
+@import "allotment/dist/style.css";
+@source "../../node_modules/streamdown/dist/**/*.{js,mjs,cjs}";
+/* Tailwind v4 only auto-scans files under the CSS file's project root.
+ * The shadcn components live in a sibling workspace package, so without
+ * this `@source` every dialog/popover/etc. class baked into those
+ * .tsx files (notably the `data-[state=open]:animate-in fade-in-0
+ * zoom-in-95 …` enter/exit animation utilities from tw-animate-css)
+ * silently fails to generate — modals render invisible, animations
+ * disappear. Keep this in sync with any new `packages/*` that ship
+ * tailwind-using TSX. */
+@source "../../../../packages/ui/src/**/*.{ts,tsx}";
+
+/* Tailwind `@source` list for every registered plugin's `src/**`,
+ * kept in sync by @zenbujs/core. Needed so component-mode plugin
+ * views' classes land in this shared stylesheet. */
+@import "@zenbujs/core/plugin-sources.css";
+
+/* Single source of truth for the shadcn-standard token → tailwind
+ * utility mapping. Plugin views import the same file so `bg-card`,
+ * `text-muted-foreground`, `rounded-md`, etc. resolve identically in
+ * the host and in every embedded plugin iframe. */
+@import "@zenbu/view-theme/tailwind.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Host-specific tokens that are not part of the shared shadcn set.
+ * Anything in here is per-app design; plugins don't automatically
+ * receive these (they're not in zenbu's `HOST_THEME_TOKENS`
+ * allowlist). If a future token should be available to plugins, lift
+ * it into `@zenbu/view-theme/tailwind.css` instead. */
+@theme inline {
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-tab-active: var(--tab-active);
+
+  /* A foreground color that sits just one step above the sidebar /
+   * tab-strip background. Use for elements that should read as
+   * "present but inert" — e.g. disabled icon-only buttons on the
+   * tab strip — without applying alpha to `currentColor` (which
+   * would cause overlapping strokes in line-art icons to stack and
+   * produce visible seams). Always fully opaque. */
+  --color-foreground-disabled: var(--foreground-disabled);
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+    "Segoe UI", system-ui, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+}
+
+:root {
+  --radius: 0.5rem;
+
+  --background: #f4f4f4;
+  --foreground: #171717;
+
+  --card: #ffffff;
+  --card-foreground: #171717;
+
+  --popover: #ffffff;
+  --popover-foreground: #171717;
+
+  --primary: #171717;
+  --primary-foreground: #fafafa;
+
+  --secondary: #f5f5f5;
+  --secondary-foreground: #171717;
+
+  --muted: #e0e0e0;
+  --muted-foreground: #737373;
+
+  --accent: #ececec;
+  --accent-foreground: #171717;
+
+  --destructive: #dc2626;
+  --destructive-foreground: #fafafa;
+
+  /* Borders are deliberately OPAQUE. Allotment renders its
+   * resize-handle separators as a `::before` pseudo-element on
+   * each non-first pane, and many panes also draw their own
+   * `border-{t,b,l,r}` against that same edge (or against another
+   * sash in a nested splitview). With a translucent border color,
+   * two 1px lines at the same pixel composite to a noticeably
+   * brighter (dark mode) or darker (light mode) seam at every
+   * crossing — most painful as a "+" highlight where two sashes
+   * meet in OLED. The values below are the precomputed blend of
+   * the previous translucent border over `--background`, so a
+   * single border looks identical to before while two overlapping
+   * borders no longer stack. */
+  --border: #d0d0d0;
+  --input: #d4d4d4;
+  --ring: rgba(0, 0, 0, 0.2);
+
+  --sidebar: #ebebeb;
+  --sidebar-foreground: #171717;
+  /* Active row tint on top of `--sidebar`. Kept deliberately
+   * close in luminance to `--sidebar` so the active row reads
+   * as "selected" without shouting. Shared with the terminal
+   * tab strip's active tab. */
+  --sidebar-accent: #d6d6d6;
+  --sidebar-accent-foreground: #171717;
+  --sidebar-border: #d0d0d0;
+  --sidebar-ring: rgba(0, 0, 0, 0.2);
+
+  /* Allotment's `--separator-border` defaults to a darker mid-grey
+   * than our `--border`, so the resize handles read as a heavier
+   * line than every other border in the app. Pin it to `--border`
+   * so every border in the app shares one variable. */
+  --separator-border: var(--border);
+
+  /* Active tab merges with the chat pane below — the pane uses
+     `bg-background`, so the active tab background must follow. */
+  --tab-active: var(--background);
+
+  /* One "step" above `--sidebar` (the tab strip bg) toward
+   * `--foreground`. Visually nearly merged with the strip; used as a
+   * disabled icon color so the icon is perceptible but clearly inert.
+   * Computed via `color-mix` so it tracks every theme automatically. */
+  --foreground-disabled: color-mix(in oklab, var(--foreground) 22%, var(--sidebar));
+}
+
+.dark {
+  --background: #1a1a1a;
+  --foreground: #ededed;
+
+  --card: #1f1f1f;
+  --card-foreground: #ededed;
+
+  --popover: #1c1c1c;
+  --popover-foreground: #ededed;
+
+  --primary: #fafafa;
+  --primary-foreground: #0e0e0e;
+
+  --secondary: #232323;
+  --secondary-foreground: #ededed;
+
+  --muted: #1c1c1c;
+  --muted-foreground: #a3a3a3;
+
+  --accent: #2a2a2a;
+  --accent-foreground: #fafafa;
+
+  --destructive: #ef4444;
+  --destructive-foreground: #fafafa;
+
+  /* See light-theme `--border` comment for why these are opaque. */
+  --border: #3a3a3a;
+  --input: #3a3a3a;
+  --ring: rgba(255, 255, 255, 0.2);
+
+  --sidebar: #161616;
+  --sidebar-foreground: #ededed;
+  /* Active row tint on top of `--sidebar`. Kept deliberately
+   * close in luminance to `--sidebar` so the active row reads
+   * as "selected" without shouting. Shared with the terminal
+   * tab strip's active tab. */
+  --sidebar-accent: #2e2e2e;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: #3a3a3a;
+  --sidebar-ring: rgba(255, 255, 255, 0.2);
+
+  --separator-border: var(--border);
+
+  --tab-active: var(--background);
+
+  --foreground-disabled: color-mix(in oklab, var(--foreground) 22%, var(--sidebar));
+}
+
+@layer base {
+  /*
+   * `border-color: var(--border)` lives in
+   * `@zenbu/view-theme/tailwind.css` (imported above) so every
+   * plugin iframe gets the same default. We only need the box-sizing
+   * reset here — it's host-shell-specific and not worth lifting into
+   * the shared theme.
+   */
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    margin: 0;
+    height: 100%;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    font-size: 14px;
+  }
+
+  button,
+  input,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  button {
+    background: transparent;
+    /* `border: none` would be the shorthand reset, but that also
+     * resets `border-color` to `currentcolor`, defeating the
+     * `* { border-color: var(--border) }` default from
+     * `@zenbu/view-theme/tailwind.css`. Any later Tailwind
+     * `border` utility on a button would then pick up the text
+     * color as its border (jet-black in light mode), which is
+     * exactly the "why is this button border black?" footgun.
+     * Resetting just the width keeps the themed border-color in
+     * place for opt-in usages like `Button variant="outline"`. */
+    border-width: 0;
+    padding: 0;
+  }
+
+  button:disabled {
+    opacity: 0.5;
+  }
+
+  textarea {
+    resize: none;
+  }
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+/* OLED: layered on top of .dark — pushes surfaces to pure black
+ * while keeping every existing dark:* Tailwind utility working. */
+.oled {
+  --background: #000000;
+  --foreground: #ededed;
+
+  --card: #050505;
+  --card-foreground: #ededed;
+
+  --popover: #050505;
+  --popover-foreground: #ededed;
+
+  --secondary: #0a0a0a;
+  --muted: #0a0a0a;
+  --muted-foreground: #a3a3a3;
+  --accent: #141414;
+  --accent-foreground: #fafafa;
+
+  /* See light-theme `--border` comment for why these are opaque.
+   * Computed as rgba(255,255,255,0.16) over #000 ≈ #2a2a2a. */
+  --border: #2a2a2a;
+  --input: #1f1f1f;
+  --ring: rgba(255, 255, 255, 0.22);
+
+  --sidebar: #000000;
+  --sidebar-foreground: #ededed;
+  /* Active row tint on top of `--sidebar`. Kept deliberately
+   * close in luminance to `--sidebar` so the active row reads
+   * as "selected" without shouting. Shared with the terminal
+   * tab strip's active tab. */
+  --sidebar-accent: #1d1d1d;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: #2a2a2a;
+  --sidebar-ring: rgba(255, 255, 255, 0.22);
+
+  --separator-border: var(--border);
+
+  --tab-active: var(--background);
+
+  /* OLED's sidebar is pure black, so mixing the foreground against
+   * it at 22% (the dark-mode value) lands around #343434 — too
+   * dark to read on top of the same black surface, and the tab
+   * strip's disabled history arrows ended up invisible. Bump the
+   * foreground share until the strokes are clearly visible while
+   * still reading as "inert". */
+  --foreground-disabled: color-mix(in oklab, var(--foreground) 50%, var(--sidebar));
+}
+
+/* Allotment's split-view container sets `overflow: hidden`, which
+ * still permits programmatic + focus-induced scrolling in Chromium.
+ * The sash element on a collapsed bottom/right pane sits at
+ * `top: containerH - 4` with `height: 8px`, so `scrollHeight` exceeds
+ * `clientHeight` by 4px. When focus moves into a descendant iframe
+ * (the chat composer or a view), the browser scrolls the splitView
+ * by those 4px to maximise the focused element's visibility, which
+ * pulls every sibling pane up 4px and clips the chat pane's top
+ * border behind the title bar. `overflow: clip` clips identically
+ * but is *not* a scroll container, so the browser can't shift it.
+ * This shows up as "the top border flashes in for one frame, then
+ * vanishes" on reload, because the focus shift happens just after
+ * the first paint.
+ *
+ * `!important` is load-bearing: allotment's own CSS
+ * (`.allotment-module_splitView__... { overflow: hidden }`) has the
+ * same specificity as `[class*="splitView"]` (both 0,1,0). Source
+ * order decides the tie, and `allotment/dist/style.css` is imported
+ * inside the terminal plugin's `terminal-view.tsx` — which is loaded
+ * AFTER this file — so without `!important` allotment wins and the
+ * 4px focus-scroll bug returns. Reproduced live: the bottom-panel
+ * vertical splitView had `scrollTop: 4`, `scrollHeight: 605` vs
+ * `clientHeight: 601`, the splitViewContainer was rendered at y=27
+ * inside its splitView at y=31, and pane1's xterm canvas + tabs
+ * strip leaked through the resulting 4px gap. */
+[class*="splitView"] {
+  overflow: clip !important;
+}
+
+/* Allotment renders its inter-pane separator as a `::before` on each
+ * non-first pane. Two things we need to fix:
+ *
+ * 1. z-index. Some pane contents (e.g. the chat pane's `relative
+ *    z-10` content layer) stack above allotment's `z-index: 5`, so
+ *    the separator gets covered. Lift it above app content
+ *    z-stacking so the border is always continuous.
+ *
+ *    NOTE: `!important` is load-bearing here. Allotment's own rule
+ *    (`.splitView.separatorBorder > .splitViewContainer >
+ *    .splitViewView:not(:first-child)::before`) uses four class
+ *    selectors plus `:not()`, which beats our three attribute
+ *    selectors on specificity. Without `!important` Allotment's
+ *    `z-index: 5` wins and the chat pane's `relative z-10` layer
+ *    paints over the separator at the top-left corner. Verified
+ *    with agent-browser pixel sampling — see PR description.
+ *
+ * 2. Color sync. Allotment ships `--separator-border:
+ *    rgba(128,128,128,0.35)`, which is heavier than the rest of
+ *    the app's borders. We pin `--separator-border` to
+ *    `var(--border)` in the theme blocks above so the resize
+ *    handle line matches every other border. Setting it on the
+ *    theme tokens rather than relying on a pseudo-element
+ *    override avoids the Vite import-order race the previous
+ *    iteration of this file had to work around. */
+[class*="splitView"][class*="separatorBorder"]
+  [class*="splitViewView"]:not(:first-child)::before {
+  z-index: 50 !important;
+}
+
+/* When a pane is collapsed (allotment removes `split-view-view-visible`),
+ * its separator pseudo-element still renders as a stray 1px line at
+ * the edge of the container. Hide it so closed panes don't show ghost
+ * borders. */
+[class*="splitView"][class*="separatorBorder"]
+  [class*="splitViewView"]:not(.split-view-view-visible)::before {
+  background-color: transparent;
+}
+
+@keyframes hg-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes hg-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes hg-pulse {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.hg-row {
+  --hg-row-bg: transparent;
+}
+
+/* Chat tab background, mirrors the .hg-row pattern. Exposes
+   --hg-tab-bg so hover-only affordances (e.g. the close button) can
+   render a gradient fade that matches the tab's current background.
+
+   Zed-style tab strip: inactive tabs blend with the surrounding
+   strip (`var(--sidebar)`); the active tab pops forward in
+   `var(--tab-active)`. Each inactive tab draws its own 1px bottom
+   rule via an inset shadow, suppressed on the active tab so it
+   visually merges with the pane below. */
+.hg-tab {
+  --hg-tab-bg: var(--sidebar);
+  background: var(--hg-tab-bg);
+  box-shadow: inset 0 -1px 0 0 var(--border);
+}
+.hg-tab:hover {
+  --hg-tab-bg: color-mix(in oklch, var(--foreground) 4%, var(--sidebar));
+}
+.hg-tab.is-active {
+  --hg-tab-bg: var(--tab-active);
+  box-shadow: none;
+}
+/* Strip-edge buttons (back/forward, +, split) sit in the same
+   sidebar-colored gutter as inactive tabs, and need the same
+   bottom rule so the line under the tab strip stays continuous. */
+.hg-tab-strip-button {
+  box-shadow: inset 0 -1px 0 0 var(--border);
+}
+/* Opt out of the global `button:disabled { opacity: 0.5 }` rule.
+   That rule fades the whole element — including the inset
+   box-shadow that draws the strip's bottom border — which makes the
+   1px line under disabled history arrows look lighter than the
+   same border under enabled tabs/buttons. We get the "disabled"
+   read entirely from the icon's `text-foreground-disabled` color
+   (see the comment in chat-tabs.tsx), so the wrapper button stays
+   fully opaque and the bottom rule renders identically in every
+   state. */
+.hg-tab-strip-button:disabled {
+  opacity: 1;
+}
+.hg-row:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  --hg-row-bg: var(--accent);
+}
+.hg-row.is-active {
+  background: var(--sidebar-accent);
+  color: var(--sidebar-accent-foreground);
+  --hg-row-bg: var(--sidebar-accent);
+}
+.hg-row.is-active:hover {
+  --hg-row-bg: var(--sidebar-accent);
+}
+.hg-icon:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.hg-header:hover {
+  background: var(--accent);
+}
+.hg-header.is-active {
+  background: var(--sidebar-accent);
+  color: var(--sidebar-accent-foreground);
+}
+
+.hg-shimmer {
+  background-size: 200% 100%;
+  animation: hg-shimmer 1.4s linear infinite;
+}
+
+.text-shimmer {
+  background-image: linear-gradient(
+    to right,
+    var(--muted-foreground) 0%,
+    var(--foreground) 50%,
+    var(--muted-foreground) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: hg-shimmer 1.6s linear infinite;
+}
+
+/* Placeholder bar that shimmers while waiting for content (e.g. a chat title being generated). */
+.shimmer-bar {
+  background-image: linear-gradient(
+    to right,
+    var(--muted) 0%,
+    var(--accent) 50%,
+    var(--muted) 100%
+  );
+  background-size: 200% 100%;
+  animation: hg-shimmer 1.6s linear infinite;
+}
+
+@keyframes hg-spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.animate-spin-slow {
+  animation: hg-spin-slow 1.2s linear infinite;
+}
+
+/* ─── Grid loader (12-dot CSS-only spinner) ───────────────────────
+ *
+ * Used by the shared <Spinner> components. We render 12 dots in a
+ * 4×3 grid and animate per-dot `opacity` (GPU-composited, no paint)
+ * instead of animating `box-shadow` (CPU paint every frame).
+ *
+ * The outer `.hg-spinner` wrapper gets `content-visibility: auto`
+ * so offscreen spinners skip work entirely, and `contain` keeps
+ * paint/layout invalidation scoped to the spinner box.
+ *
+ * Visual is 1:1 with the previous box-shadow keyframes: same dot
+ * positions, same 2s timing, same on/off pattern at each 10% step,
+ * same default `ease` interpolation.
+ */
+.hg-spinner {
+  contain: layout paint;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 12px;
+}
+.hg-grid-loader {
+  contain: layout paint style;
+}
+.hg-grid-loader-dot {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  background: currentColor;
+  will-change: opacity;
+}
+.hg-grid-loader-dot[data-dot="00"] { animation: hg-d00 2s infinite; }
+.hg-grid-loader-dot[data-dot="01"] { animation: hg-d01 2s infinite; }
+.hg-grid-loader-dot[data-dot="02"] { animation: hg-d02 2s infinite; }
+.hg-grid-loader-dot[data-dot="10"] { animation: hg-d10 2s infinite; }
+/* dots (1,1) and (3,1) are opaque the entire cycle — no animation */
+.hg-grid-loader-dot[data-dot="12"] { animation: hg-d12 2s infinite; }
+.hg-grid-loader-dot[data-dot="20"] { animation: hg-d20 2s infinite; }
+.hg-grid-loader-dot[data-dot="21"] { animation: hg-d21 2s infinite; }
+.hg-grid-loader-dot[data-dot="22"] { animation: hg-d22 2s infinite; }
+.hg-grid-loader-dot[data-dot="30"] { animation: hg-d30 2s infinite; }
+.hg-grid-loader-dot[data-dot="32"] { animation: hg-d32 2s infinite; }
+
+@keyframes hg-d00 {
+  0%, 70% { opacity: 1 }
+  80%, 90% { opacity: 0 }
+  100% { opacity: 1 }
+}
+@keyframes hg-d01 {
+  0%, 20% { opacity: 1 }
+  30% { opacity: 0 }
+  40%, 50% { opacity: 1 }
+  60%, 70% { opacity: 0 }
+  80%, 100% { opacity: 1 }
+}
+@keyframes hg-d02 {
+  0%, 60% { opacity: 1 }
+  70% { opacity: 0 }
+  80%, 100% { opacity: 1 }
+}
+@keyframes hg-d10 {
+  0%, 20% { opacity: 1 }
+  30%, 40% { opacity: 0 }
+  50%, 100% { opacity: 1 }
+}
+@keyframes hg-d12 {
+  0%, 30% { opacity: 1 }
+  40%, 50% { opacity: 0 }
+  60%, 100% { opacity: 1 }
+}
+@keyframes hg-d20 {
+  0% { opacity: 1 }
+  10% { opacity: 0 }
+  20%, 40% { opacity: 1 }
+  50%, 60% { opacity: 0 }
+  70%, 100% { opacity: 1 }
+}
+@keyframes hg-d21 {
+  0%, 20% { opacity: 1 }
+  30% { opacity: 0 }
+  40%, 80% { opacity: 1 }
+  90% { opacity: 0 }
+  100% { opacity: 1 }
+}
+@keyframes hg-d22 {
+  0% { opacity: 1 }
+  10%, 20% { opacity: 0 }
+  30%, 100% { opacity: 1 }
+}
+@keyframes hg-d30 {
+  0%, 10% { opacity: 1 }
+  20%, 30% { opacity: 0 }
+  40%, 50% { opacity: 1 }
+  60%, 70% { opacity: 0 }
+  80%, 100% { opacity: 1 }
+}
+@keyframes hg-d32 {
+  0%, 20% { opacity: 1 }
+  30% { opacity: 0 }
+  40%, 70% { opacity: 1 }
+  80%, 90% { opacity: 0 }
+  100% { opacity: 1 }
+}
+
+/* ─── Sidebar keyboard cursor ───────────────────────────────────
+ *
+ * Highlight applied by `<SidebarCursorSlot>` in the agent sidebar.
+ * The cursor is purely a focused-keyboard affordance — when the
+ * sidebar wrapper does NOT have focus we render nothing at all, so
+ * the unfocused list reads like a plain list and nothing competes
+ * with the row's own `isActive` tint. The `::after` ring is only
+ * painted while the sidebar wrapper has focus-within (i.e.
+ * `app.sidebar` is the active focus context).
+ *
+ * Implemented in plain CSS (not Tailwind arbitrary variants) because
+ * the attribute-equals selectors are easier to read here, and we
+ * already have other sidebar-specific styles in this file. */
+[data-cursor-on] {
+  position: relative;
+  border-radius: 6px;
+}
+/* The ring lives on a pseudo-element layered on TOP of the row's
+ * content. We can't use `box-shadow: inset` on the wrapper because
+ * the row's child elements paint their own opaque backgrounds (most
+ * notably the `isActive` chat's flat gray) over the wrapper's box,
+ * which covers any inset shadow we'd draw underneath. An
+ * absolutely-positioned `::after` with `pointer-events: none` sits
+ * above all of that and stays visible no matter how the row
+ * decorates its own background.
+ *
+ * Gated on `:focus-within` of the sidebar's focus-context wrapper
+ * so the ring only appears while the sidebar actually owns keyboard
+ * focus. */
+[data-zenbu-list-nav]:focus-within [data-cursor-on]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  pointer-events: none;
+  /* z-index nudges this above siblings within the wrapper's local
+   * stacking context. The wrapper itself doesn't create a new stack
+   * (it has no opacity/transform/etc.) so this also stays above
+   * children-of-children like the row's hover-action overlay. */
+  z-index: 2;
+  border: 2px solid var(--ring);
+}

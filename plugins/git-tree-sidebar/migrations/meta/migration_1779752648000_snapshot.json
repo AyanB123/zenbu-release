@@ -1,0 +1,12 @@
+{
+  "id": "074cd555-d503-41e7-9292-b68fefe9fe81",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "fields": {
+    "statuses": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "52ce15d3b39c24de",
+      "default": {}
+    }
+  }
+}

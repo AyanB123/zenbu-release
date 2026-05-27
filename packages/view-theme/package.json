@@ -1,5 +1,5 @@
 {
-  "name": "@hackable-gui/view-theme",
+  "name": "@zenbu/view-theme",
   "version": "0.0.1",
   "description": "Tailwind v4 @theme mapping that wires shadcn-style utility classes (bg-card, text-muted-foreground, border, rounded-md, …) onto the host design tokens that zenbu auto-injects into every plugin view. Plugins import this after `@import \"tailwindcss\"` and immediately match the host's theme — including live updates when the host toggles dark mode.",
   "license": "MIT",

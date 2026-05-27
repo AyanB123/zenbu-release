@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-label="Marketplace">
+  <path fill="#2BAE9F" d="M5 4h14l2 5H3l2-5Z"/>
+  <path fill="#E3A72F" d="M3 9h18v3a3 3 0 0 1-5 2.24A3 3 0 0 1 12 15a3 3 0 0 1-4-0.76A3 3 0 0 1 3 12V9Z"/>
+  <path fill="#2BAE9F" d="M5 15h14v5H5v-5Zm3 1.5v2h2v-2H8Zm6 0v2h2v-2h-2Z"/>
+</svg>

@@ -1,0 +1,22 @@
+{
+  "name": "@hackable-gui/search-recent-workspaces",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cmd+L recent-workspaces palette. Maintains a per-workspace lastVisitedAt record in its own schema and lets the user jump to the previously-active workspace with one keystroke.",
+  "exports": {
+    ".": "./zenbu.plugin.ts"
+  },
+  "dependencies": {
+    "@zenbu/ui": "workspace:*",
+    "@zenbujs/core": "^0.0.27",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.6.0"
+  }
+}

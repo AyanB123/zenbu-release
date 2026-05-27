@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-label="Agent sidebar icon">
+  <rect x="4" y="3" width="16" height="18" rx="3" fill="#4F8EA8"/>
+  <rect x="4" y="3" width="5" height="18" rx="2.5" fill="#F2B84B"/>
+  <path d="M12 8.5h4a2 2 0 0 1 2 2v2.5a2 2 0 0 1-2 2h-1.7L12 17v-2h0a2 2 0 0 1-2-2v-2.5a2 2 0 0 1 2-2Z" fill="#FFFFFF"/>
+</svg>

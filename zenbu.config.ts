@@ -1,111 +1,188 @@
 import {
-	defineConfig,
-	defineBuildConfig,
-	type BuildPlugin,
+  defineConfig,
+  defineBuildConfig,
+  type BuildPlugin,
 } from "@zenbujs/core/config";
 
-/**
- * Strips dev-only **scripts** from the staged `package.json`. The heavy
- * lifting (removing `pnpm.overrides` + `@zenbu/act`) happens earlier in
- * `scripts/release.sh`, *before* `pnpm install`, so the regenerated
- * lockfile stays consistent with what we ship.
- *
- * This plugin only handles cosmetic cleanup: dropping scripts that
- * reference files we don't ship (`scripts/release.sh`, `scripts/sync.sh`,
- * `scripts/dev-link.mjs`). It also acts as a belt-and-suspenders for
- * `pnpm.overrides` in case `build:source` is run directly without going
- * through `release.sh`.
- */
 const trimPackageJson: BuildPlugin = {
-	name: "trim-package-json",
-	transform(file) {
-		if (file.path !== "package.json") return;
-		const pkg = JSON.parse(file.contents);
+  name: "trim-package-json",
+  transform(file) {
+    if (file.path !== "package.json") return;
+    const pkg = JSON.parse(file.contents);
 
-		if (pkg.pnpm?.overrides) {
-			delete pkg.pnpm.overrides;
-			if (Object.keys(pkg.pnpm).length === 0) delete pkg.pnpm;
-		}
+    if (pkg.pnpm?.overrides) {
+      delete pkg.pnpm.overrides;
+      if (Object.keys(pkg.pnpm).length === 0) delete pkg.pnpm;
+    }
 
-		if (pkg.scripts) {
-			delete pkg.scripts["dev:link"];
-			delete pkg.scripts["dev:unlink"];
-			delete pkg.scripts.sync;
-			delete pkg.scripts.release;
-			delete pkg.scripts["release:source"];
-			delete pkg.scripts["release:electron"];
-		}
+    if (pkg.scripts) {
+      delete pkg.scripts["dev:link"];
+      delete pkg.scripts["dev:unlink"];
+      delete pkg.scripts.sync;
+      delete pkg.scripts.release;
+      delete pkg.scripts["release:source"];
+      delete pkg.scripts["release:electron"];
+    }
 
-		return JSON.stringify(pkg, null, 2) + "\n";
-	},
+    return JSON.stringify(pkg, null, 2) + "\n";
+  },
 };
 
 export default defineConfig({
-	// Boot-window HTML. The single ui entrypoint for the whole app.
-	uiEntrypoint: "./packages/app/src/renderer",
+  uiEntrypoint: "./plugins/app/src/renderer",
+  plugins: [
+    "./plugins/app/zenbu.plugin.ts",
+    "./plugins/pi-commands/zenbu.plugin.ts",
+    "./plugins/plan/zenbu.plugin.ts",
+    "./plugins/extra-dirs-sidebar/zenbu.plugin.ts",
+    "./plugins/agent-sidebar/zenbu.plugin.ts",
+    "./plugins/context-sidebar/zenbu.plugin.ts",
+    "./plugins/file-tree-sidebar/zenbu.plugin.ts",
+    "./plugins/git-tree-sidebar/zenbu.plugin.ts",
+    "./plugins/terminal/zenbu.plugin.ts",
+    "./plugins/marketplace/zenbu.plugin.ts",
+    "./plugins/open-in/zenbu.plugin.ts",
+    "./plugins/play/zenbu.plugin.ts",
+    "./plugins/settings/zenbu.plugin.ts",
+    "./plugins/cm-markdown/zenbu.plugin.ts",
+    "./plugins/cm-vim/zenbu.plugin.ts",
+    "./plugins/cm-image-paste/zenbu.plugin.ts",
+    "./plugins/search-recent-agents/zenbu.plugin.ts",
+    "./plugins/search-recent-workspaces/zenbu.plugin.ts",
+    "./plugins/search-recent-worktrees/zenbu.plugin.ts",
+    "./plugins/plugin-installer/zenbu.plugin.ts",
+    // "./plugins/react-doctor/zenbu.plugin.ts",
+  ],
 
-	// Plugins are pure main-process: services + optional schema/preload/events.
-	// Each plugin owns its own folder under `packages/`. Defining the host
-	// plugin in its own file (rather than inline here) is what lets
-	// `zen link` write the host's generated types under
-	// `packages/app/.zenbu/types/`, where `packages/app/tsconfig.json`
-	// expects to find them.
-	plugins: [
-		"./packages/app/zenbu.plugin.ts",
-		"./packages/plan/zenbu.plugin.ts",
-		"./packages/react-doctor/zenbu.plugin.ts",
-	],
+  localPlugins: "./zenbu.local.ts",
 
-	// Build pipeline for `zen build:source` (mirror staging) and
-	// `zen build:electron` (signed .app via electron-builder).
-	build: defineBuildConfig({
-		packageManager: { type: "pnpm", version: "10.13.1" },
-		// The .app's "host version" comes from `package.json#version` —
-		// read at build time and baked into <bundle>/host.json. Bump
-		// `package.json#version` every time you ship a new .app build.
-		out: ".zenbu/build/source",
-		include: [
-			"packages/app/src/**",
-			"packages/app/migrations/**",
-			"packages/app/package.json",
-			"packages/app/tsconfig.json",
-			"packages/app/vite.config.ts",
-			"packages/plan/src/**",
-			"packages/plan/zenbu.plugin.ts",
-			"packages/plan/package.json",
-			"packages/plan/tsconfig.json",
-			"packages/open-files/src/**",
-			"packages/open-files/zenbu.plugin.ts",
-			"packages/open-files/package.json",
-			"packages/open-files/tsconfig.json",
-			"packages/react-doctor/src/**",
-			"packages/react-doctor/migrations/**",
-			"packages/react-doctor/zenbu.plugin.ts",
-			"packages/react-doctor/package.json",
-			"packages/react-doctor/tsconfig.json",
-			"packages/view-theme/**",
-			".gitignore",
-			"package.json",
-			"pnpm-lock.yaml",
-			"pnpm-workspace.yaml",
-			"tsconfig.json",
-			"zenbu.config.ts",
-		],
-		ignore: [
-			"**/*.test.ts",
-			"**/*.test.tsx",
-			"**/*.spec.ts",
-			"**/*.spec.tsx",
-			"**/dev-only/**",
-			"**/.zenbu/**",
-			"**/node_modules/**",
-			"**/.env",
-			"**/.env.*",
-			"**/dist/**",
-			"**/traces/**",
-			"**/.DS_Store",
-		],
-		plugins: [trimPackageJson],
-		mirror: { target: "zenbu-labs/zenbu-release", branch: "main" },
-	}),
+  build: defineBuildConfig({
+    packageManager: { type: "pnpm", version: "10.13.1" },
+    out: ".zenbu/build/source",
+    include: [
+      // Plugin icon assets, indexed by `pluginSidebar` on boot.
+      // Convention: `plugins/<name>/assets/icon.png`.
+      "plugins/*/assets/**",
+      "plugins/app/src/**",
+      "plugins/app/migrations/**",
+      "plugins/app/package.json",
+      "plugins/app/tsconfig.json",
+      "plugins/app/vite.config.ts",
+      "plugins/plan/src/**",
+      "plugins/plan/zenbu.plugin.ts",
+      "plugins/plan/package.json",
+      "plugins/plan/tsconfig.json",
+      "plugins/pi-commands/src/**",
+      "plugins/pi-commands/zenbu.plugin.ts",
+      "plugins/pi-commands/package.json",
+      "plugins/pi-commands/tsconfig.json",
+      "plugins/open-files/src/**",
+      "plugins/open-files/zenbu.plugin.ts",
+      "plugins/open-files/package.json",
+      "plugins/open-files/tsconfig.json",
+      "plugins/extra-dirs-sidebar/src/**",
+      "plugins/extra-dirs-sidebar/zenbu.plugin.ts",
+      "plugins/extra-dirs-sidebar/package.json",
+      "plugins/extra-dirs-sidebar/tsconfig.json",
+      "plugins/agent-sidebar/src/**",
+      "plugins/agent-sidebar/migrations/**",
+      "plugins/agent-sidebar/zenbu.plugin.ts",
+      "plugins/agent-sidebar/package.json",
+      "plugins/agent-sidebar/tsconfig.json",
+      "plugins/context-sidebar/src/**",
+      "plugins/context-sidebar/zenbu.plugin.ts",
+      "plugins/context-sidebar/package.json",
+      "plugins/context-sidebar/tsconfig.json",
+      "plugins/file-tree-sidebar/src/**",
+      "plugins/file-tree-sidebar/zenbu.plugin.ts",
+      "plugins/file-tree-sidebar/package.json",
+      "plugins/file-tree-sidebar/tsconfig.json",
+      "plugins/git-tree-sidebar/src/**",
+      "plugins/git-tree-sidebar/migrations/**",
+      "plugins/git-tree-sidebar/zenbu.plugin.ts",
+      "plugins/git-tree-sidebar/package.json",
+      "plugins/git-tree-sidebar/tsconfig.json",
+      "plugins/terminal/src/**",
+      "plugins/terminal/zenbu.plugin.ts",
+      "plugins/terminal/package.json",
+      "plugins/terminal/tsconfig.json",
+      "plugins/marketplace/src/**",
+      "plugins/marketplace/zenbu.plugin.ts",
+      "plugins/marketplace/package.json",
+      "plugins/marketplace/tsconfig.json",
+      "plugins/open-in/src/**",
+      "plugins/open-in/migrations/**",
+      "plugins/open-in/zenbu.plugin.ts",
+      "plugins/open-in/package.json",
+      "plugins/open-in/tsconfig.json",
+      "plugins/play/src/**",
+      "plugins/play/migrations/**",
+      "plugins/play/zenbu.plugin.ts",
+      "plugins/play/package.json",
+      "plugins/play/tsconfig.json",
+      "plugins/settings/src/**",
+      "plugins/settings/migrations/**",
+      "plugins/settings/zenbu.plugin.ts",
+      "plugins/settings/package.json",
+      "plugins/settings/tsconfig.json",
+      "plugins/cm-markdown/src/**",
+      "plugins/cm-markdown/zenbu.plugin.ts",
+      "plugins/cm-markdown/package.json",
+      "plugins/cm-markdown/tsconfig.json",
+      "plugins/cm-vim/src/**",
+      "plugins/cm-vim/zenbu.plugin.ts",
+      "plugins/cm-vim/package.json",
+      "plugins/cm-vim/tsconfig.json",
+      "plugins/cm-image-paste/src/**",
+      "plugins/cm-image-paste/zenbu.plugin.ts",
+      "plugins/cm-image-paste/package.json",
+      "plugins/cm-image-paste/tsconfig.json",
+      "plugins/search-recent-agents/src/**",
+      "plugins/search-recent-agents/zenbu.plugin.ts",
+      "plugins/search-recent-agents/package.json",
+      "plugins/search-recent-agents/tsconfig.json",
+      "plugins/search-recent-workspaces/src/**",
+      "plugins/search-recent-workspaces/migrations/**",
+      "plugins/search-recent-workspaces/zenbu.plugin.ts",
+      "plugins/search-recent-workspaces/package.json",
+      "plugins/search-recent-workspaces/tsconfig.json",
+      "plugins/search-recent-worktrees/src/**",
+      "plugins/search-recent-worktrees/zenbu.plugin.ts",
+      "plugins/search-recent-worktrees/package.json",
+      "plugins/search-recent-worktrees/tsconfig.json",
+      "plugins/plugin-installer/src/**",
+      "plugins/plugin-installer/zenbu.plugin.ts",
+      "plugins/plugin-installer/package.json",
+      "plugins/plugin-installer/tsconfig.json",
+      "plugins/react-doctor/src/**",
+      "plugins/react-doctor/migrations/**",
+      "plugins/react-doctor/zenbu.plugin.ts",
+      "plugins/react-doctor/package.json",
+      "plugins/react-doctor/tsconfig.json",
+      "packages/view-theme/**",
+      "packages/ui/**",
+      ".gitignore",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "tsconfig.json",
+      "zenbu.config.ts",
+    ],
+    ignore: [
+      "**/*.test.ts",
+      "**/*.test.tsx",
+      "**/*.spec.ts",
+      "**/*.spec.tsx",
+      "**/dev-only/**",
+      "**/.zenbu/**",
+      "**/node_modules/**",
+      "**/.env",
+      "**/.env.*",
+      "**/dist/**",
+      "**/traces/**",
+      "**/.DS_Store",
+    ],
+    plugins: [trimPackageJson],
+    mirror: { target: "zenbu-labs/zenbu-release", branch: "main" },
+  }),
 });

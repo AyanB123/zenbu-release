@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "outDir": "dist",
+    "paths": {
+      // The host's Vite server runs with `@: src/renderer` (see
+      // `plugins/app/vite.config.ts`). Plugin component views are
+      // served by that same Vite server, so any `@/...` import in
+      // our source is resolved against the host's renderer at
+      // runtime. Mirroring that mapping here keeps typecheck honest.
+      "@/*": ["../app/src/renderer/*"],
+      "@host/*": ["../app/src/*"],
+      "#registry/*": ["../app/types/*"]
+    }
+  },
+  "include": [
+    "src",
+    "zenbu.plugin.ts",
+    "./.zenbu/types/zenbu-register.ts"
+  ]
+}

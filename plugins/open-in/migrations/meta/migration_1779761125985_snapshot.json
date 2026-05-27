@@ -1,0 +1,21 @@
+{
+  "id": "c468a619-1508-4a31-a1f4-63b2d802c73e",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "fields": {
+    "apps": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "ea4c3f6e9eae3860",
+      "default": {}
+    },
+    "settings": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "dc1a35247f9ecceb",
+      "default": {
+        "defaultBundlePath": null,
+        "finderDefaultMigrated": false
+      }
+    }
+  }
+}

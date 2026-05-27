@@ -1,0 +1,24 @@
+{
+  "name": "@zenbu/terminal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Bottom-panel plugin: renders the active scope's terminals as a component view (rendering: 'component'). The PTY lifecycle + DB state stay in the host's TerminalService; this plugin just contributes the UI.",
+  "exports": {
+    ".": "./zenbu.plugin.ts"
+  },
+  "dependencies": {
+    "@zenbu/ui": "workspace:*",
+    "@zenbujs/core": "^0.0.27",
+    "allotment": "^1.20.5",
+    "ghostty-web": "^0.4.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.6.0"
+  }
+}

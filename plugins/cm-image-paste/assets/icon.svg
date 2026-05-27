@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-label="Image paste icon">
+  <rect x="4" y="5" width="16" height="14" rx="2" fill="none" stroke="#2F80A7" stroke-width="2"/>
+  <circle cx="9" cy="10" r="2" fill="#2F80A7"/>
+  <path d="M6 17l4.2-4.2 3 3L16 13l2 2v2H6z" fill="#35A38F"/>
+  <path d="M15 4h4v4" fill="none" stroke="#35A38F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M19 4l-5 5" fill="none" stroke="#35A38F" stroke-width="2" stroke-linecap="round"/>
+</svg>

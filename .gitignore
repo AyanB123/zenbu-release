@@ -12,6 +12,9 @@ node_modules/.zenbujs/
 # Local-only TS overrides
 tsconfig.local.json
 
+# Per-developer local plugin overlay (loaded via `localPlugins` in zenbu.config.ts)
+zenbu.local.ts
+
 # Env files (keep .env.example tracked)
 .env
 .env.*
@@ -35,4 +38,14 @@ Desktop.ini
 *.iml
 
 
-traces
+# Boot-trace dumps (one JSON per dev boot)
+traces/
+
+# Logs from `scripts/gen-plugin-icons.sh`
+.icon-gen-logs/
+
+# Logs from `scripts/gen-plugin-screenshots.sh`
+.screenshot-gen-logs/
+
+# Startup-time experiments / benchmarks
+experiments/

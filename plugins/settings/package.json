@@ -1,0 +1,26 @@
+{
+  "name": "@hackable-gui/settings",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Settings plugin. Contributes the main 'settings' view (theme / send-mode / accounts / pi / shortcuts) as a rendering: 'component' view, and a workspace-rail gear button that opens it. Owns its own schema for settings-internal state (last-selected tab) and depends on the host app + pi-commands plugins for the actual config it surfaces UI for.",
+  "exports": {
+    ".": "./zenbu.plugin.ts",
+    "./services/settings-registry": "./src/main/services/settings-registry.ts"
+  },
+  "dependencies": {
+    "@zenbu/ui": "workspace:*",
+    "@zenbujs/core": "^0.0.27",
+    "lucide-react": "^1.16.0",
+    "radix-ui": "^1.4.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "sonner": "^2.0.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.6.0"
+  }
+}

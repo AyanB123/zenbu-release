@@ -1,0 +1,24 @@
+{
+  "id": "24b61655-bb0e-4e1e-b318-56d0d5dae594",
+  "prevId": "7f17e43c-66fa-4aaf-813a-d38ef74be5c7",
+  "fields": {
+    "ui": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "8c002cd4729d613a",
+      "default": {
+        "lastTab": "general",
+        "lastPluginsSectionId": null
+      }
+    },
+    "registry": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "cd198f75f6df70f7",
+      "default": {
+        "sections": {},
+        "items": {}
+      }
+    }
+  }
+}

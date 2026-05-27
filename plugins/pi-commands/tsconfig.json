@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": [
+        "../app/src/renderer/*"
+      ]
+    }
+  },
+  "include": [
+    "src",
+    "zenbu.plugin.ts",
+    "./.zenbu/types/zenbu-register.ts"
+  ]
+}

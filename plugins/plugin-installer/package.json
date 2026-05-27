@@ -1,0 +1,23 @@
+{
+  "name": "@hackable-gui/plugin-installer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Install third-party Zenbu plugins from a git URL. Adds a command-palette action that opens an input modal, clones the repo into ~/.zenbu/plugins, installs deps with the bundled pnpm, then patches zenbu.local.ts to register the plugin.",
+  "exports": {
+    ".": "./zenbu.plugin.ts"
+  },
+  "dependencies": {
+    "@zenbu/ui": "workspace:*",
+    "@zenbujs/core": "^0.0.27",
+    "lucide-react": "^1.16.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.6.0"
+  }
+}

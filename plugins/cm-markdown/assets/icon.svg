@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-label="Markdown live preview icon">
+  <path fill="#3B82A0" d="M5 3h10l4 4v14H5z"/>
+  <path fill="#79C2B0" d="M15 3v4h4zM7 10h10v2H7zM7 15h5v2H7z"/>
+  <path fill="none" stroke="#79C2B0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M8 7l-2 2 2 2M16 14l2 2-2 2"/>
+</svg>

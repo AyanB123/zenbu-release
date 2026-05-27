@@ -1,0 +1,22 @@
+{
+  "name": "@hackable-gui/search-recent-worktrees",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cmd+; recent-worktrees palette. Lists the active workspace's worktrees by most-recently-opened chat; selecting one jumps to that chat (same code path as clicking it in the agent sidebar).",
+  "exports": {
+    ".": "./zenbu.plugin.ts"
+  },
+  "dependencies": {
+    "@zenbu/ui": "workspace:*",
+    "@zenbujs/core": "^0.0.27",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.6.0"
+  }
+}

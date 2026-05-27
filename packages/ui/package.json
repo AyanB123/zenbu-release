@@ -1,0 +1,49 @@
+{
+  "name": "@zenbu/ui",
+  "version": "0.0.1",
+  "description": "Shared UI primitives for the hackable-gui host. Includes shadcn/ui components (new-york style) and zenbu-specific primitives like `list-nav`. Each component is a separate subpath export — `import { Button } from \"@zenbu/ui/button\"` — so plugins anywhere in the monorepo (or, once published, anywhere on npm) can pull in just what they need. Pairs with `@zenbu/view-theme` for tokens.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./package.json": "./package.json",
+    "./utils": "./src/utils.ts",
+    "./use-mobile": "./src/use-mobile.ts",
+    "./*": "./src/*.tsx"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "@base-ui/react": "^1.4.1",
+    "@hookform/resolvers": "^5.2.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
+    "embla-carousel-react": "^8.6.0",
+    "input-otp": "^1.4.2",
+    "lucide-react": "^1.16.0",
+    "radix-ui": "^1.4.3",
+    "react": "^19.0.0",
+    "react-day-picker": "^9.14.0",
+    "react-dom": "^19.0.0",
+    "react-hook-form": "^7.76.0",
+    "recharts": "^3.8.0",
+    "sonner": "^2.0.7",
+    "tailwind-merge": "^3.6.0",
+    "vaul": "^1.1.2"
+  },
+  "peerDependenciesMeta": {
+    "@hookform/resolvers": { "optional": true },
+    "embla-carousel-react": { "optional": true },
+    "input-otp": { "optional": true },
+    "react-day-picker": { "optional": true },
+    "react-hook-form": { "optional": true },
+    "recharts": { "optional": true },
+    "vaul": { "optional": true }
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

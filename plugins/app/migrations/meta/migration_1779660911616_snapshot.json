@@ -1,0 +1,142 @@
+{
+  "id": "c3815ebc-8d20-40e1-9a57-8b469167f085",
+  "prevId": "70e3820c-bfbe-4783-b804-d787617493d0",
+  "fields": {
+    "repos": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "abc6daf49c0fb814",
+      "default": {}
+    },
+    "workspaces": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "bcfdf59600a4d3b1",
+      "default": {}
+    },
+    "scopes": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "25a46621edcc3d67",
+      "default": {}
+    },
+    "chats": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "e274c6a653a1d416",
+      "default": {}
+    },
+    "sessions": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "aa18db08fe4063bc",
+      "default": {}
+    },
+    "windowStates": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "03f82c7ddd71dcc4",
+      "default": {}
+    },
+    "chatStates": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "1435d8954a9470c5",
+      "default": {}
+    },
+    "terminals": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "f6cee4787dd01d49",
+      "default": {}
+    },
+    "fileTreeIndexes": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "5be79a98ec942832",
+      "default": {}
+    },
+    "models": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "389f9537591154c4",
+      "default": {}
+    },
+    "sessionMeta": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "52998134722c6aa1",
+      "default": {}
+    },
+    "killedSessions": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "66cebe4d7ce03cd7",
+      "default": {}
+    },
+    "pendingReloadToasts": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "8cd6790799910376",
+      "default": {}
+    },
+    "chatWindows": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "f95e82b83f93bd6a",
+      "default": {}
+    },
+    "piExtensions": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "60d3727986700ee2",
+      "default": {}
+    },
+    "playConfigs": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "8a5d0f5e66ed312a",
+      "default": {}
+    },
+    "openInApps": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "ea4c3f6e9eae3860",
+      "default": {}
+    },
+    "paletteActions": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "5478c5f878ebb592",
+      "default": {}
+    },
+    "recentProjects": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "78467fab863fcfdb",
+      "default": {}
+    },
+    "env": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "5aa7b30ea8cde207",
+      "default": {
+        "homeDir": null
+      }
+    },
+    "settings": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "893df100986688bd",
+      "default": {
+        "theme": "system",
+        "chatBackground": null,
+        "vimMode": true,
+        "sidebarChatSort": "created",
+        "defaultSendMode": "followUp",
+        "defaultOpenInBundlePath": null,
+        "finderDefaultMigrated": false
+      }
+    }
+  }
+}
