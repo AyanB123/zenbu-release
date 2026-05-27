@@ -16,6 +16,7 @@ const trimPackageJson: BuildPlugin = {
     }
 
     if (pkg.scripts) {
+      delete pkg.scripts["pnpm:devPreinstall"];
       delete pkg.scripts["dev:link"];
       delete pkg.scripts["dev:unlink"];
       delete pkg.scripts.sync;
