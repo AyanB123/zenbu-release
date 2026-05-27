@@ -2,6 +2,7 @@ import type { MessageComponents } from "../message-components"
 import { AgentReloaded } from "./agent-reloaded"
 import { AssistantMessage } from "./assistant-message"
 import { CloneMarker } from "./clone-marker"
+import { ErrorMessage } from "./error-message"
 import { Interrupted } from "./interrupted"
 import { Loading } from "./loading"
 import { PermissionRequest } from "./permission-request"
@@ -23,12 +24,14 @@ export const defaultMessageComponents: MessageComponents = {
   AgentReloaded,
   CloneMarker,
   TurnSummary,
+  ErrorMessage,
 }
 
 export {
   AgentReloaded,
   AssistantMessage,
   CloneMarker,
+  ErrorMessage,
   Interrupted,
   Loading,
   PermissionRequest,

@@ -17,6 +17,8 @@ type AssistantContent =
 type AssistantMessage = {
   role: "assistant"
   content: AssistantContent[]
+  stopReason?: string
+  errorMessage?: string
 }
 
 type CompactToolCall = {
@@ -271,6 +273,22 @@ export function materializeMessages(
         openAssistantPartial = null
         openToolJsonByIndex.clear()
         if (!msg || msg.role !== "assistant") break
+        // Surface provider errors so empty error turns aren't silent.
+        // Falls through to the content loop so partial content that
+        // arrived before the failure is preserved above the card.
+        if (
+          (msg.stopReason === "error" || msg.stopReason === "aborted") &&
+          typeof msg.errorMessage === "string" &&
+          msg.errorMessage.length > 0
+        ) {
+          out.push({
+            role: "error",
+            message: msg.errorMessage,
+            detail: extractProviderErrorDetail(msg.errorMessage),
+            stopReason: msg.stopReason,
+            key: `error-${event.seq}`,
+          })
+        }
         for (let j = 0; j < msg.content.length; j++) {
           const block = msg.content[j]
           if (block.type === "text" && block.text) {
@@ -1195,4 +1213,32 @@ function splitUnifiedDiff(diff: string): {
     }
   }
   return { oldText: oldLines.join("\n"), newText: newLines.join("\n") }
+}
+
+/** Pull `.error.message` / `.message` out of pi's `errorMessage`
+ * (typically `"<status> <JSON body>"`). Returns null when the
+ * payload doesn't carry a parseable JSON object. */
+function extractProviderErrorDetail(raw: string): string | null {
+  const start = raw.indexOf("{")
+  if (start < 0) return null
+  const end = raw.lastIndexOf("}")
+  if (end <= start) return null
+  const slice = raw.slice(start, end + 1)
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(slice)
+  } catch {
+    return null
+  }
+  if (!parsed || typeof parsed !== "object") return null
+  const obj = parsed as Record<string, unknown>
+  const inner = obj.error
+  if (inner && typeof inner === "object") {
+    const msg = (inner as Record<string, unknown>).message
+    if (typeof msg === "string" && msg.length > 0) return msg
+  }
+  if (typeof obj.message === "string" && obj.message.length > 0) {
+    return obj.message
+  }
+  return null
 }

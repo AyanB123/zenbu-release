@@ -1,11 +1,12 @@
 import { definePlugin } from "@zenbujs/core/config";
 
 /**
- * Extra-directories left-sidebar plugin.
+ * Extra-directories right-sidebar plugin.
  *
  * Contributes a single `rendering: "component"` view, `extra-dirs`,
- * tagged with `meta.kind = "left-sidebar"` so the host's
- * `LeftSidebarTabBar` picks it up and renders a tab for it.
+ * tagged with `meta.kind = "view"` + `meta.sidebar = true` so the
+ * host's right-sidebar tab strip picks it up and renders a tab for
+ * it. Labeled "Add dir to context" in the tab tooltip.
  *
  * The view itself is a thin React component that reads
  * `scope.extraDirectories` for the active scope (via the host's DB

@@ -107,6 +107,8 @@ function getMessageKey(msg: MaterializedMessage, index: number): string {
       return `turn-${index}`
     case "interrupted":
       return `interrupted-${index}`
+    case "error":
+      return `error-${index}`
     case "system_reload":
       return `system-reload-${index}`
     default:
@@ -460,6 +462,10 @@ function MessageRow({
           workspaceId={message.workspaceId}
           scopeId={message.scopeId}
         />
+      )
+    case "error":
+      return (
+        <C.ErrorMessage message={message.message} detail={message.detail} />
       )
   }
 }

@@ -142,6 +142,14 @@ export type MaterializedMessage =
     })
   | (WithKey & { role: "interrupted" })
   | (WithKey & {
+      /** Emitted on `message_end` with `stopReason` error/aborted.
+       * `detail` is the parsed provider message when available. */
+      role: "error"
+      message: string
+      detail?: string | null
+      stopReason?: string
+    })
+  | (WithKey & {
       /** Divider rendered in place of the sentinel-wrapped user
        * message `SessionsService.continueKilled` dispatches after
        * a hot-reload auto-resume. Looks like "— Agent reloaded —".

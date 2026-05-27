@@ -137,6 +137,13 @@ export type LoadingProps = {
 export type InterruptedProps = Record<string, never>
 export type AgentReloadedProps = Record<string, never>
 
+export type ErrorMessageProps = {
+  /** Raw provider error text (typically `"<status> <JSON>"`). */
+  message: string
+  /** Parsed human-readable message, when the payload was JSON. */
+  detail?: string | null
+}
+
 export type CloneMarkerProps = {
   /** Origin marker variant. `clone` for `/clone` (history copied
    * verbatim including the leaf), `fork` for `/fork` (history
@@ -212,4 +219,5 @@ export type MessageComponents = {
   AgentReloaded: ComponentType<AgentReloadedProps>
   CloneMarker: ComponentType<CloneMarkerProps>
   TurnSummary: ComponentType<TurnSummaryProps>
+  ErrorMessage: ComponentType<ErrorMessageProps>
 }

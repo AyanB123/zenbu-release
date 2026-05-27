@@ -7,7 +7,7 @@ import {
 } from "@zenbujs/core/react";
 
 /**
- * Component-mode view for the "Extra directories" left-sidebar tab.
+ * Component-mode view for the "Add dir to context" right-sidebar tab.
  *
  * Runs in-process inside the host renderer realm — so it can `useDb`
  * / `useRpc` against the host's services directly. Args (`scopeId`)
@@ -92,7 +92,7 @@ export default function ExtraDirsSidebarView({
   if (!activeScopeId) {
     return (
       <div className="px-3 py-6 text-center text-[11px] text-muted-foreground">
-        Open a chat to see its extra directories.
+        Open a chat to add directories to its context.
       </div>
     );
   }
@@ -101,7 +101,7 @@ export default function ExtraDirsSidebarView({
     <div className="flex min-h-0 min-w-0 flex-col px-1.5">
       <div className="px-2 pt-2 pb-1">
         <div className="text-[12px] font-medium text-foreground">
-          Extra directories
+          Add dir to context
         </div>
       </div>
       <div className="flex flex-col gap-1">
@@ -145,7 +145,7 @@ function AddDirRow({ onClick }: { onClick: () => void }) {
       <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
         <PlusIcon />
       </span>
-      <span className="min-w-0 flex-1 truncate text-left">Add directory</span>
+      <span className="min-w-0 flex-1 truncate text-left">Add dir to context</span>
     </button>
   );
 }
