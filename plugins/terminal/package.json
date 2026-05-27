@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@zenbu/ui": "workspace:*",
-    "@zenbujs/core": "^0.0.27",
+    "@zenbujs/core": "^0.2.0",
     "allotment": "^1.20.5",
     "ghostty-web": "^0.4.0",
     "react": "^19.0.0",

@@ -11,7 +11,7 @@
     "@zenbu/view-theme": "workspace:*",
     "@tailwindcss/vite": "^4.2.0",
     "@vitejs/plugin-react": "^5.0.0",
-    "@zenbujs/core": "^0.0.27",
+    "@zenbujs/core": "^0.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-doctor": "^0.2.3",

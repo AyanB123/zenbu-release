@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
@@ -99,8 +99,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/ui
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       lucide-react:
         specifier: ^1.16.0
         version: 1.16.0(react@19.2.6)
@@ -193,8 +193,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/view-theme
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@24.12.4)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@24.12.4)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       allotment:
         specifier: ^1.20.5
         version: 1.20.5(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -302,8 +302,8 @@ importers:
         specifier: ^5.0.0
         version: 5.2.0(vite@6.4.2(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.32.0)(sass@1.51.0)(tsx@4.19.4)(yaml@2.9.0))
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       react:
         specifier: ^19.0.0
         version: 19.2.6
@@ -339,8 +339,8 @@ importers:
         specifier: workspace:*
         version: link:../app
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       react:
         specifier: ^19.0.0
         version: 19.2.6
@@ -370,8 +370,8 @@ importers:
         specifier: ^6.0.0
         version: 6.43.0
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
     devDependencies:
       '@types/node':
         specifier: ^22.19.0
@@ -392,8 +392,8 @@ importers:
         specifier: ^6.3.0
         version: 6.3.0(@codemirror/commands@6.10.3)(@codemirror/language@6.12.3)(@codemirror/search@6.7.0)(@codemirror/state@6.6.0)(@codemirror/view@6.43.0)
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       react:
         specifier: ^19.0.0
         version: 19.2.6
@@ -420,8 +420,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/ui
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       radix-ui:
         specifier: ^1.4.3
         version: 1.4.3(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -448,8 +448,8 @@ importers:
   plugins/extra-dirs-sidebar:
     dependencies:
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       react:
         specifier: ^19.0.0
         version: 19.2.6
@@ -476,8 +476,8 @@ importers:
         specifier: 1.0.0-beta.3
         version: 1.0.0-beta.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       react:
         specifier: ^19.0.0
         version: 19.2.6
@@ -504,8 +504,8 @@ importers:
         specifier: 1.0.0-beta.3
         version: 1.0.0-beta.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       react:
         specifier: ^19.0.0
         version: 19.2.6
@@ -532,8 +532,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/ui
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       lucide-react:
         specifier: ^1.16.0
         version: 1.16.0(react@19.2.6)
@@ -563,8 +563,8 @@ importers:
   plugins/open-files:
     dependencies:
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       react:
         specifier: ^19.0.0
         version: 19.2.6
@@ -591,8 +591,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/ui
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       lucide-react:
         specifier: ^1.16.0
         version: 1.16.0(react@19.2.6)
@@ -634,8 +634,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/ui
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@24.12.4)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@24.12.4)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       react:
         specifier: ^19.0.0
         version: 19.2.6
@@ -668,8 +668,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/view-theme
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       mermaid:
         specifier: ^11.0.0
         version: 11.15.0
@@ -711,8 +711,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/ui
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       lucide-react:
         specifier: ^1.16.0
         version: 1.16.0(react@19.2.6)
@@ -748,8 +748,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/ui
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       lucide-react:
         specifier: ^1.16.0
         version: 1.16.0(react@19.2.6)
@@ -785,8 +785,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/view-theme
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       react:
         specifier: ^19.0.0
         version: 19.2.6
@@ -822,8 +822,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/ui
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       react:
         specifier: ^19.0.0
         version: 19.2.6
@@ -850,8 +850,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/ui
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       react:
         specifier: ^19.0.0
         version: 19.2.6
@@ -878,8 +878,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/ui
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       react:
         specifier: ^19.0.0
         version: 19.2.6
@@ -906,8 +906,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/ui
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       lucide-react:
         specifier: ^1.16.0
         version: 1.16.0(react@19.2.6)
@@ -943,8 +943,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/ui
       '@zenbujs/core':
-        specifier: ^0.0.27
-        version: 0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.2.0
+        version: 0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       allotment:
         specifier: ^1.20.5
         version: 1.20.5(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -4177,8 +4177,8 @@ packages:
     resolution: {integrity: sha512-A9gOqLdi6cV4ibazAjcQufGj0B1y/vDqYrcuP6d/6x8P27gRS8643Dj9o1dEKtB6O7fwxb2FgBmJS2mX7gpvdw==}
     engines: {node: '>=14.6'}
 
-  '@zenbujs/core@0.0.27':
-    resolution: {integrity: sha512-dUZcmeAvpEsR9yHtYzEsS//zmlYsqfEXPwetcSobg79M9vAlCGF/HZzAlcbuIevLNq9fHyGMR6SfaDOBf9vKFA==}
+  '@zenbujs/core@0.2.0':
+    resolution: {integrity: sha512-HhHQGwQDKSucItduaybk3JUraenvP6CQ6nBO4h1H9AMyDHRqydY7E09mYXGh/h/M4cTm8jKz09Um0nZWwgozmw==}
     hasBin: true
     peerDependencies:
       electron: ^42.0.0
@@ -10932,7 +10932,7 @@ snapshots:
 
   '@xmldom/xmldom@0.9.10': {}
 
-  '@zenbujs/core@0.0.27(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)':
+  '@zenbujs/core@0.2.0(@types/node@22.19.19)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)':
     dependencies:
       '@parcel/watcher': 2.5.6
       '@vitejs/plugin-react': 5.2.0(vite@6.4.2(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.32.0)(sass@1.51.0)(tsx@4.19.4)(yaml@2.9.0))
@@ -10964,7 +10964,7 @@ snapshots:
       - utf-8-validate
       - yaml
 
-  '@zenbujs/core@0.0.27(@types/node@24.12.4)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)':
+  '@zenbujs/core@0.2.0(@types/node@24.12.4)(electron@42.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)':
     dependencies:
       '@parcel/watcher': 2.5.6
       '@vitejs/plugin-react': 5.2.0(vite@6.4.2(@types/node@24.12.4)(jiti@2.7.0)(lightningcss@1.32.0)(sass@1.51.0)(tsx@4.19.4)(yaml@2.9.0))

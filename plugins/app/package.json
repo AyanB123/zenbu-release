@@ -29,7 +29,7 @@
     "@tailwindcss/vite": "^4.2.0",
     "@vitejs/plugin-react": "^5.0.0",
     "@vitejs/plugin-react-swc": "^4.3.1",
-    "@zenbujs/core": "^0.0.27",
+    "@zenbujs/core": "^0.2.0",
     "allotment": "^1.20.5",
     "anser": "^2.3.5",
     "class-variance-authority": "^0.7.1",
