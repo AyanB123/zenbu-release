@@ -57,8 +57,9 @@ type TitleBarViewArgs = {
  *     same record exposes `status` + `exitCode` so we can show a
  *     pill in the header (Running / Exited / Errored).
  *  3. **Install Plugin** \u2014 split button with `installLocal` +
- *     an `(i)` popover explaining what installation does. Toasts
- *     on result.
+ *     an `(i)` popover explaining what installation does. Writes
+ *     into the user's local `zenbu.local.ts` overlay (not the
+ *     shared `zenbu.config.ts`). Toasts on result.
  */
 export default function PluginDevButtons({
   args,
@@ -227,7 +228,10 @@ export default function PluginDevButtons({
           "transition-colors hover:bg-background/70",
         )}
       >
-        <HoverTip label="Install into the main app" setAriaLabel={false}>
+        <HoverTip
+          label="Install into your local zenbu config (zenbu.local.ts)"
+          setAriaLabel={false}
+        >
           <button
             type="button"
             onClick={handleInstall}
@@ -267,11 +271,17 @@ export default function PluginDevButtons({
           >
             <p className="font-medium text-foreground">Install plugin</p>
             <p className="mt-1 text-muted-foreground">
-              This installs the plugin into your{" "}
+              This adds the plugin to your{" "}
               <span className="font-medium text-foreground">
-                main application
+                zenbu.local.ts
+              </span>{" "}
+              overlay \u2014 a local-only config that layers on top of{" "}
+              <span className="font-medium text-foreground">
+                zenbu.config.ts
               </span>
-              . Do this when you&apos;re sure it works.
+              . The shared config isn&apos;t touched, so this only
+              affects your machine. Do this when you&apos;re sure
+              it works.
             </p>
           </PopoverContent>
         </Popover>
