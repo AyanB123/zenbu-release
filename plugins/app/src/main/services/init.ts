@@ -30,6 +30,8 @@ export class InitService extends Service.create({
       type: "entrypoint",
       query: { skeletonRoute: initialSkeletonRoute(root) },
       baseWindow: {
+        minWidth: 430,
+        minHeight: 310,
         trafficLightPosition: { x: 14, y: 12 },
       },
       contextMenu: { prepend: buildContextMenuPrepend() },

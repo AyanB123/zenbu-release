@@ -119,11 +119,18 @@ function SwapPane({
 
 // ---------------------------------------------------------------------------
 // List pane (the default surface — search + body + bottom footer).
+//
+// Body is two collapsible sections ("Installed" + "Marketplace"),
+// both default-open, both filtered by the search query. The
+// Marketplace section dedupes out any name that's already in the
+// Installed list, so a plugin the user has installed locally only
+// appears in one place. The `isSearching` argument is unused now
+// but kept on the parent so callers don't need to be touched; the
+// query value alone determines filtering.
 
 function ListPane({
   query,
   onQueryChange,
-  isSearching,
   onNewPlugin,
 }: {
   query: string
@@ -131,13 +138,73 @@ function ListPane({
   isSearching: boolean
   onNewPlugin: () => void
 }) {
+  const lowerQ = query.trim().toLowerCase()
+
+  const installed =
+    (useDb(root => root.app.plugins) as PluginEntry[] | undefined) ?? []
+  const icons =
+    (useDb(root => root.app.pluginIcons) as
+      | Record<string, PluginIconRecord>
+      | undefined) ?? {}
+
+  // Plugins on disk under `~/.zenbu/plugins`. Fetched once on
+  // mount; the set changes rarely enough that polling isn't
+  // worth it.
+  const available = useAvailablePlugins()
+
+  // Filter installed by name (lowercased, includes match). We
+  // could also match against `kind` / `tag` here but the user's
+  // mental model for the sidebar is "find by plugin name".
+  const filteredInstalled = useMemo(() => {
+    if (!lowerQ) return installed
+    return installed.filter(p =>
+      p.name.toLowerCase().includes(lowerQ),
+    )
+  }, [installed, lowerQ])
+
+  // Dedupe key set for the Marketplace section. Match on the
+  // marketplace plugin's `id` AND `name` lowercased so either form
+  // shadows an installed plugin of the same identity.
+  const installedKeys = useMemo(() => {
+    const set = new Set<string>()
+    for (const p of installed) set.add(p.name.toLowerCase())
+    return set
+  }, [installed])
+
+  // On disk but not in `root.app.plugins`. Same name-includes
+  // filter as Installed.
+  const filteredNotInstalled = useMemo<AvailablePlugin[]>(() => {
+    const uninstalled = available.filter(
+      p => !installedKeys.has(p.name.toLowerCase()),
+    )
+    if (!lowerQ) return uninstalled
+    return uninstalled.filter(p => p.name.toLowerCase().includes(lowerQ))
+  }, [available, installedKeys, lowerQ])
+
+  const filteredMarketplace = useMemo<MarketplacePlugin[]>(() => {
+    const sorted = PLUGINS.slice().sort((a, b) => b.installs - a.installs)
+    const matched = lowerQ
+      ? sorted.filter(p =>
+          [p.name, p.tagline, p.author, p.tags.join(" ")]
+            .join(" ")
+            .toLowerCase()
+            .includes(lowerQ),
+        )
+      : sorted
+    return matched.filter(
+      p =>
+        !installedKeys.has(p.id.toLowerCase()) &&
+        !installedKeys.has(p.name.toLowerCase()),
+    )
+  }, [lowerQ, installedKeys])
+
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       <div
         className="flex shrink-0 flex-col gap-1.5 px-1.5 pt-1.5 pb-1"
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       >
-        <SearchInput value={query} onChange={onQueryChange} />
+        <SearchInput value={query} onChange={onQueryChange} autoFocus />
       </div>
       <div
         className="relative min-h-0 flex-1"
@@ -147,10 +214,35 @@ function ListPane({
           className="absolute inset-0 overflow-auto px-1.5"
           style={{ paddingBottom: BODY_BOTTOM_PAD }}
         >
-          {isSearching ? (
-            <MarketplaceResults query={query.trim()} />
+          {filteredInstalled.length === 0 &&
+          filteredNotInstalled.length === 0 &&
+          filteredMarketplace.length === 0 ? (
+            // Single empty state instead of three collapsed
+            // sections with their own "nothing here" lines.
+            <div className="px-2 py-6 text-center text-[12px] text-muted-foreground">
+              {lowerQ ? "No matches." : "No plugins installed."}
+            </div>
           ) : (
-            <InstalledList />
+            <>
+              {filteredInstalled.length > 0 && (
+                <Section label="Installed">
+                  <InstalledList
+                    installed={filteredInstalled}
+                    icons={icons}
+                  />
+                </Section>
+              )}
+              {filteredNotInstalled.length > 0 && (
+                <Section label="Not installed">
+                  <NotInstalledList plugins={filteredNotInstalled} />
+                </Section>
+              )}
+              {filteredMarketplace.length > 0 && (
+                <Section label="Marketplace">
+                  <MarketplaceResults plugins={filteredMarketplace} />
+                </Section>
+              )}
+            </>
           )}
         </div>
         <SidebarFooter>
@@ -166,6 +258,100 @@ function ListPane({
       </div>
     </div>
   )
+}
+
+// ---------------------------------------------------------------------------
+// Collapsible section header.
+//
+// Matches the visual shape of the agent-sidebar's `WorktreeGroupRow`
+// (rotating chevron + label + small count) so the two sidebars
+// read as belonging to the same app. Both sections start expanded;
+// state is local to the component since the user explicitly asked
+// not to virtualize yet — once the marketplace data goes live the
+// expanded state may want to move into windowState.
+
+function Section({
+  label,
+  defaultOpen = true,
+  children,
+}: {
+  label: string
+  defaultOpen?: boolean
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className="mt-2 first:mt-0 flex flex-col">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className={cn(
+          "group flex min-h-[26px] w-full min-w-0 cursor-default select-none items-center gap-1.5",
+          "rounded-md px-1.5 py-1 text-left text-sidebar-foreground",
+          "hover:bg-foreground/[0.04]",
+        )}
+      >
+        <span className="inline-flex size-3.5 shrink-0 items-center justify-center text-muted-foreground">
+          <SectionChevron open={open} />
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-foreground">
+          {label}
+        </span>
+      </button>
+      {open && <div className="mt-0.5">{children}</div>}
+    </div>
+  )
+}
+
+function SectionChevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{
+        transform: open ? "rotate(90deg)" : "rotate(0deg)",
+        transition: "transform 120ms ease",
+      }}
+    >
+      <polyline points="9 18 15 12 9 6" />
+    </svg>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Available-on-disk plugins. Fetched once on mount from
+// `~/.zenbu/plugins` via `listAvailable`.
+
+type AvailablePlugin = { name: string; dir: string }
+
+function useAvailablePlugins(): AvailablePlugin[] {
+  const rpc = useRpc()
+  const [list, setList] = useState<AvailablePlugin[]>([])
+  useEffect(() => {
+    let cancelled = false
+    void rpc.marketplace.marketplace
+      .listAvailable()
+      .then(res => {
+        if (cancelled) return
+        setList(res.plugins)
+      })
+      .catch(err => {
+        console.error(
+          "[marketplace-sidebar] listAvailable failed:",
+          err,
+        )
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [rpc])
+  return list
 }
 
 // ---------------------------------------------------------------------------
@@ -185,32 +371,32 @@ type PluginIconRecord = {
   hash: string
 }
 
-function InstalledList() {
-  const installed =
-    (useDb(root => root.app.plugins) as PluginEntry[] | undefined) ?? []
-  const icons =
-    (useDb(root => root.app.pluginIcons) as
-      | Record<string, PluginIconRecord>
-      | undefined) ?? {}
-
+// Receives the pre-filtered list from `ListPane` so it doesn't
+// have to re-read the DB. Keeps the rendering helper dumb —
+// search + dedupe lives in the parent.
+function InstalledList({
+  installed,
+  icons,
+}: {
+  installed: PluginEntry[]
+  icons: Record<string, PluginIconRecord>
+}) {
+  if (installed.length === 0) {
+    return (
+      <div className="px-2 py-3 text-center text-[11.5px] text-muted-foreground">
+        No plugins installed.
+      </div>
+    )
+  }
   return (
     <div className="flex flex-col gap-0.5">
-      <div className="px-1.5 pt-1 pb-1.5 text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">
-        Installed
-      </div>
-      {installed.length === 0 ? (
-        <div className="px-2 py-6 text-center text-muted-foreground">
-          No plugins installed.
-        </div>
-      ) : (
-        installed.map(plugin => (
-          <InstalledRow
-            key={`${plugin.kind ?? "plugin"}:${plugin.name}`}
-            plugin={plugin}
-            icon={icons[plugin.name] ?? null}
-          />
-        ))
-      )}
+      {installed.map(plugin => (
+        <InstalledRow
+          key={`${plugin.kind ?? "plugin"}:${plugin.name}`}
+          plugin={plugin}
+          icon={icons[plugin.name] ?? null}
+        />
+      ))}
     </div>
   )
 }
@@ -372,20 +558,69 @@ function prettifyName(name: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Not-installed list. Same row chrome as Installed; click routes
+// through `openDetailInPane` with the on-disk `directory` so the
+// detail view can read README from `~/.zenbu/plugins/<name>`.
+// No icon hydration — these aren't in `root.app.pluginIcons`.
+
+function NotInstalledList({
+  plugins,
+}: {
+  plugins: AvailablePlugin[]
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      {plugins.map(plugin => (
+        <NotInstalledRow key={plugin.name} plugin={plugin} />
+      ))}
+    </div>
+  )
+}
+
+function NotInstalledRow({ plugin }: { plugin: AvailablePlugin }) {
+  const rpc = useRpc()
+  const onClick = () => {
+    void rpc.marketplace.marketplace
+      .openDetailInPane({
+        pluginId: plugin.name,
+        directory: plugin.dir,
+      })
+      .catch(err => {
+        console.error(
+          "[marketplace-sidebar] openDetailInPane failed:",
+          err,
+        )
+      })
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "group flex w-full min-w-0 cursor-default select-none items-center gap-2",
+        "rounded-md py-1.5 pl-1.5 pr-2 text-left text-sidebar-foreground",
+        "hover:bg-foreground/[0.04]",
+      )}
+    >
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground">
+        <PuzzleIcon />
+      </span>
+      <span className="min-w-0 flex-1 truncate">
+        {prettifyName(plugin.name)}
+      </span>
+    </button>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Marketplace results (when the user has typed a query).
 
-function MarketplaceResults({ query }: { query: string }) {
+function MarketplaceResults({
+  plugins,
+}: {
+  plugins: MarketplacePlugin[]
+}) {
   const rpc = useRpc()
-  const filtered = useMemo(() => {
-    const q = query.toLowerCase()
-    const sorted = PLUGINS.slice().sort((a, b) => b.installs - a.installs)
-    return sorted.filter(p =>
-      [p.name, p.tagline, p.author, p.tags.join(" ")]
-        .join(" ")
-        .toLowerCase()
-        .includes(q),
-    )
-  }, [query])
 
   const openDetail = (plugin: MarketplacePlugin) => {
     void rpc.marketplace.marketplace
@@ -398,16 +633,21 @@ function MarketplaceResults({ query }: { query: string }) {
       })
   }
 
-  if (filtered.length === 0) {
+  if (plugins.length === 0) {
     return (
-      <div className="px-2 py-6 text-center text-muted-foreground">
+      <div className="px-2 py-3 text-center text-[11.5px] text-muted-foreground">
         No matches.
       </div>
     )
   }
+  // No virtualization yet: the mock catalog is small (under a few
+  // dozen entries) and the user explicitly wants to design the
+  // windowing once the data goes live. When it does, only this
+  // list body needs to swap to a virtualized renderer — nothing
+  // in `ListPane` cares how `MarketplaceResults` lays things out.
   return (
     <ul className="flex flex-col gap-0.5">
-      {filtered.map(plugin => (
+      {plugins.map(plugin => (
         <MarketplaceRow
           key={plugin.id}
           plugin={plugin}
@@ -580,11 +820,15 @@ function CreatePluginPane({
         setPhase({ kind: "name" })
         return
       }
-      if (p.pluginName && p.worktreePath) {
+      if (p.pluginName && p.pluginPath) {
+        // Land on the plugin's own source directory — the dev
+        // surface (title-bar Run / Install buttons, file-tree
+        // sidebar) is keyed on the plugin path, not on any host
+        // worktree.
         setPhase({
           kind: "done",
           pluginName: p.pluginName,
-          pluginDir: p.worktreePath,
+          pluginDir: p.pluginPath,
         })
       }
     })
@@ -790,14 +1034,32 @@ function SidebarFooter({ children }: { children: React.ReactNode }) {
 function SearchInput({
   value,
   onChange,
+  autoFocus,
 }: {
   value: string
   onChange: (v: string) => void
+  autoFocus?: boolean
 }) {
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  // Focus on mount so the user can start typing immediately when
+  // the sidebar opens. The iframe's contentWindow has to be
+  // focused first or `.focus()` is a no-op on a freshly-mounted
+  // view, so we defer one frame.
+  useEffect(() => {
+    if (!autoFocus) return
+    const t = requestAnimationFrame(() => {
+      try {
+        window.focus()
+      } catch {}
+      inputRef.current?.focus()
+    })
+    return () => cancelAnimationFrame(t)
+  }, [autoFocus])
   return (
     <div className="flex h-7 items-center gap-1.5 rounded-md border border-border/60 bg-card/40 px-2 focus-within:bg-card">
       <SearchIcon />
       <input
+        ref={inputRef}
         type="text"
         value={value}
         onChange={e => onChange(e.target.value)}

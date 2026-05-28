@@ -10,8 +10,9 @@ import { Service } from "@zenbujs/core/runtime";
  *      CodeMirror extension under `meta.kind = "cm.composer-extension"`.
  *
  *   2. Registers the `VimModeStatusItem` React component under
- *      `meta.kind = "status-bar.right-item"`, which the host's
- *      `AppStatusBar` renders in its right slot.
+ *      `meta.kind = "pi-footer.item"` with `position: "right"`,
+ *      which the `pi-footer` plugin's container renders in the
+ *      right slot of the chat-pane footer strip.
  *
  * No advice, no schema. The two registry kinds are the only seams.
  */

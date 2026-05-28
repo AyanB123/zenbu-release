@@ -1,7 +1,4 @@
 import type { Command } from "./types"
-import { renderAppsView } from "./views/apps-view"
-import { renderCreateZenbuAppView } from "./views/create-zenbu-app-view"
-import { renderLaunchDevAppView } from "./views/launch-dev-app-view"
 
 /**
  * Renderer-side static command list.
@@ -20,30 +17,4 @@ import { renderLaunchDevAppView } from "./views/launch-dev-app-view"
  * embedded form, …). If it just needs to "do a thing", register it
  * via `PaletteActionsService` instead.
  */
-export const STATIC_COMMANDS: Command[] = [
-  {
-    id: "apps",
-    label: "Apps",
-    hint: "Launch a scaffolded zenbu app",
-    onSelect: () => ({
-      render: renderAppsView,
-    }),
-  },
-  {
-    id: "launch-dev-app",
-    label: "Launch dev app",
-    hint: "Run a registered app in dev mode",
-    onSelect: () => ({
-      title: "Launch dev app",
-      render: renderLaunchDevAppView,
-    }),
-  },
-  {
-    id: "create-zenbu-app",
-    label: "Create Zenbu app",
-    hint: "Scaffold a new desktop app",
-    onSelect: () => ({
-      render: renderCreateZenbuAppView,
-    }),
-  },
-]
+export const STATIC_COMMANDS: Command[] = []

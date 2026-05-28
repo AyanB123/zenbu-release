@@ -51,9 +51,30 @@ export type Events = {
     ok: boolean;
     error?: string;
     pluginName?: string;
-    worktreePath?: string;
-    scopeId?: string;
-    chatId?: string;
+    /** Absolute path of the scaffolded plugin source
+     * (`~/.zenbu/plugins/<name>`). The marketplace sidebar opens the
+     * new window at this path. */
+    pluginPath?: string;
+  };
+  /**
+   * `plugin-dev` runtime events. The title-bar "Run in Dev" button
+   * spawns a fresh Electron instance of the host with
+   * `--plugin=<manifest>` so the user's in-progress plugin loads
+   * alongside the configured set. These events let the renderer
+   * surface success / failure toasts without polling.
+   */
+  pluginDevRunStart: { runId: string; pluginPath: string };
+  pluginDevRunError: {
+    runId: string;
+    pluginPath: string;
+    message: string;
+  };
+  pluginDevRunExit: { runId: string; exitCode: number | null };
+  /** Result of `installLocal` (writing the path into `zenbu.local.ts`). */
+  pluginDevInstallDone: {
+    pluginPath: string;
+    ok: boolean;
+    error?: string;
   };
   /** File clicked in sidebar; opens file view in active pane */
   openFileInActivePane: {

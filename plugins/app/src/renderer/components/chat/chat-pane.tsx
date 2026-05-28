@@ -11,12 +11,12 @@ import { WorkspaceSelector } from "./workspace-selector"
 import { WorktreeHandoffSelector } from "./worktree-handoff-selector"
 import { Composer, type ComposerSubmitPayload } from "../composer/composer"
 import { useChatDraft } from "./lib/use-chat-draft"
-import { AppStatusBar } from "../status-bar/app-status-bar"
 import type { AgentConfig } from "../composer/composer-toolbar"
 import type { ComboboxOption } from "../composer/combobox"
 import type { FileEntry, SlashCommand } from "../composer/types"
 import { cn } from "@/lib/utils"
 import { ErrorBoundary } from "../common/error-boundary"
+import { PiFooter } from "../pi-footer/pi-footer"
 import { FileIndexContext } from "./lib/file-index-context"
 import { ChatAuthCard } from "../auth/chat-auth-card"
 import {
@@ -250,6 +250,7 @@ export function ChatPane({
   // the `/set-default-...` slash command. Mod-Enter and the `/steer`
   // / `/queue` slash commands ignore this and force their own intent.
   const defaultSendMode = useDb(root => root.app.settings.defaultSendMode)
+  const showChatDevtools = useDb(root => root.app.settings.chatDevtools)
   const registeredSlashCommands = useDb(root => root.app.slashCommands)
 
   // The slash menu lists:
@@ -1012,7 +1013,7 @@ export function ChatPane({
       )}
     >
       <ChatBackgroundLayer url={backgroundUrl} opacity={background?.opacity} />
-      <InvariantOverlay chatId={chat.id} />
+      {showChatDevtools ? <InvariantOverlay chatId={chat.id} /> : null}
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         <FileIndexContext.Provider value={files}>
         {/* Only render the chat's own title bar when nothing sits
@@ -1154,7 +1155,12 @@ export function ChatPane({
             />
           </ErrorBoundary>
         )}
-        <AppStatusBar sessionId={sessionId} />
+        {/* The footer strip. Chrome is host-owned; items are
+          * contributed by plugins via `meta.kind = "pi-footer.item"`.
+          * The built-in `scope-info` and `chat-stats` items live in
+          * the `pi-footer` plugin and reach this slot through the
+          * same registration path third-party items use. */}
+        <PiFooter sessionId={sessionId} />
         </FileIndexContext.Provider>
       </div>
     </div>

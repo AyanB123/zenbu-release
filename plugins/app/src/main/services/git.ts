@@ -6,6 +6,73 @@ import { Service } from "@zenbujs/core/runtime"
 
 const execFileP = promisify(execFile)
 
+/**
+ * Read a single text file and count line additions. Returns
+ * `{ binary: true, additions: 0 }` for files that look binary or
+ * are too large to bother with.
+ */
+async function countTextAdditions(
+  full: string,
+  size: number,
+): Promise<{ additions: number; binary: boolean }> {
+  if (size >= 4 * 1024 * 1024) return { additions: 0, binary: true }
+  const content = await fs.readFile(full)
+  for (let k = 0; k < Math.min(content.length, 4096); k++) {
+    if (content[k] === 0) return { additions: 0, binary: true }
+  }
+  if (content.length === 0) return { additions: 0, binary: false }
+  const text = content.toString("utf8")
+  let additions = text.split("\n").length
+  if (text.endsWith("\n")) additions -= 1
+  if (additions < 0) additions = 0
+  return { additions, binary: false }
+}
+
+/**
+ * Walk an untracked directory and yield one entry per text file
+ * inside it (relative path, additions, binary). Skips `node_modules`
+ * and `.git`. Caps total files visited so we don't hang the commit
+ * popover on a multi-gigabyte tree someone forgot to gitignore.
+ */
+async function walkDirFiles(
+  root: string,
+): Promise<Array<{ relPath: string; additions: number; binary: boolean }>> {
+  const MAX_FILES = 2000
+  const out: Array<{ relPath: string; additions: number; binary: boolean }> = []
+  const stack: string[] = [root]
+  while (stack.length > 0 && out.length < MAX_FILES) {
+    const dir = stack.pop()!
+    let entries: import("node:fs").Dirent[]
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const ent of entries) {
+      if (out.length >= MAX_FILES) break
+      if (ent.name === ".git" || ent.name === "node_modules") continue
+      const full = path.join(dir, ent.name)
+      if (ent.isDirectory()) {
+        stack.push(full)
+        continue
+      }
+      if (!ent.isFile()) continue
+      try {
+        const stat = await fs.stat(full)
+        const m = await countTextAdditions(full, stat.size)
+        out.push({
+          relPath: path.relative(root, full),
+          additions: m.additions,
+          binary: m.binary,
+        })
+      } catch {
+        // ignore unreadable file
+      }
+    }
+  }
+  return out
+}
+
 type LastCommit = {
   hash: string
   shortHash: string
@@ -275,33 +342,37 @@ export class GitService extends Service.create({
       let binary = n?.binary ?? false
       if (e.code === "??" && !binary) {
         // Untracked: count lines of the file on disk to give the
-        // commit modal something meaningful to show.
+        // commit modal something meaningful to show. Git emits a
+        // single porcelain entry per untracked directory (trailing
+        // slash), so we walk those directories and emit one entry
+        // per file inside.
         const full = path.isAbsolute(e.path)
           ? e.path
           : path.join(directory, e.path)
         try {
           const stat = await fs.stat(full)
-          if (stat.isFile() && stat.size < 4 * 1024 * 1024) {
-            const content = await fs.readFile(full)
-            // Heuristic: if it contains NUL bytes, call it binary.
-            let isBin = false
-            for (let k = 0; k < Math.min(content.length, 4096); k++) {
-              if (content[k] === 0) {
-                isBin = true
-                break
-              }
+          if (stat.isFile()) {
+            const m = await countTextAdditions(full, stat.size)
+            additions = m.additions
+            binary = m.binary
+          } else if (stat.isDirectory()) {
+            // Expand the directory: one CommitFile per file inside.
+            // Strip any trailing slash from the porcelain path so we
+            // can join cleanly.
+            const dirRel = e.path.replace(/\/+$/, "")
+            const inner = await walkDirFiles(full)
+            for (const f of inner) {
+              if (!f.binary) totalAdds += f.additions
+              files.push({
+                path: path.posix.join(dirRel, f.relPath.split(path.sep).join("/")),
+                oldPath: null,
+                status: "??",
+                additions: f.binary ? 0 : f.additions,
+                deletions: 0,
+                binary: f.binary,
+              })
             }
-            if (isBin) {
-              binary = true
-            } else if (content.length === 0) {
-              additions = 0
-            } else {
-              const text = content.toString("utf8")
-              additions = text.split("\n").length
-              // Trim a trailing empty line from the split count.
-              if (text.endsWith("\n")) additions -= 1
-              if (additions < 0) additions = 0
-            }
+            continue
           } else {
             binary = true
           }

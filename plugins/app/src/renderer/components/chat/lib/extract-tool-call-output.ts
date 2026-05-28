@@ -20,12 +20,23 @@ export type ToolCallOutputState = {
    * `tool_execution_update` or `tool_execution_end`. */
   toolResponse: ToolResponse | null
   /** Status mirror of the materializer's `ToolMessage.status`:
-   *   - `null`     \u2014 toolCallId never seen in the event log
-   *   - `pending`  \u2014 tool call block exists in an assistant message
-   *                 but `tool_execution_start` hasn't fired yet
-   *   - `running`  \u2014 `tool_execution_start` fired, end hasn't
-   *   - `completed` / `failed` \u2014 `tool_execution_end` settled it */
-  status: "pending" | "running" | "completed" | "failed" | null
+   *   - `null`        \u2014 toolCallId never seen in the event log
+   *   - `pending`     \u2014 tool call block exists in an assistant message
+   *                     but `tool_execution_start` hasn't fired yet
+   *   - `running`     \u2014 `tool_execution_start` fired, end hasn't
+   *   - `completed` / `failed` \u2014 `tool_execution_end` settled it
+   *   - `interrupted` \u2014 a `turn_interrupted` (or aborted
+   *                     `message_end`) arrived after
+   *                     `tool_execution_start` with no matching
+   *                     `tool_execution_end`. Matches what the
+   *                     inline tool card reads as "canceled". */
+  status:
+    | "pending"
+    | "running"
+    | "completed"
+    | "failed"
+    | "interrupted"
+    | null
   /** Raw payload from the last `tool_execution_end` (or
    * `tool_execution_update` if end hasn't fired yet) so the view
    * can fall back to `JSON.stringify`-ing for non-bash tools we
@@ -41,10 +52,14 @@ export type ToolCallOutputState = {
  * (which builds turn summaries, fork markers, system-reload
  * sentinels \u2014 all irrelevant to a single tool call's output).
  *
- * Folds three event kinds:
+ * Folds four event kinds:
  *   - `tool_execution_start` \u2192 captures toolName + args, status \u2192 running
  *   - `tool_execution_update` \u2192 captures partialResult (live streaming)
  *   - `tool_execution_end` \u2192 captures result + isError \u2192 completed/failed
+ *   - `interrupted` / `turn_interrupted` \u2192 flips a still-running
+ *     tool to `interrupted` so the side pane label matches the
+ *     inline card's "canceled" indicator. Same trigger the
+ *     materializer uses for the in-chat status switch.
  *
  * Pure: no DB, no RPC. Caller supplies whatever events it has.
  * Returns `{ status: null, ... }` when the toolCallId isn't in the
@@ -65,6 +80,20 @@ export function extractToolCallOutput(
   for (let i = 0; i < events.length; i++) {
     const event = events[i]
     const kind = event.kind
+    // Interrupt events don't carry a toolCallId \u2014 they apply to
+    // whichever tool was in flight at the time. Only flip when
+    // we've already seen this call start: a `turn_interrupted`
+    // that arrives before `tool_execution_start` is for a
+    // different call (or for the assistant text). Mirrors the
+    // materializer's `markInFlightToolsTerminal(out, "interrupted")`
+    // pass so the side pane status pill agrees with the inline
+    // card's "canceled" indicator.
+    if (kind === "interrupted" || kind === "turn_interrupted") {
+      if (state.status === "running" || state.status === "pending") {
+        state.status = "interrupted"
+      }
+      continue
+    }
     if (
       kind !== "tool_execution_start" &&
       kind !== "tool_execution_update" &&

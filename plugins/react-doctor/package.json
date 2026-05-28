@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Sidebar plugin that runs react-doctor against the active scope and renders the diagnostics with the host's design language.",
   "exports": {
     ".": "./zenbu.plugin.ts"
   },

@@ -37,7 +37,12 @@ type AssistantMessageEvent = {
   toolCall?: CompactToolCall
 }
 
-type ToolStatus = "pending" | "running" | "completed" | "failed"
+type ToolStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "interrupted"
 
 /**
  * Walk the pi event log and produce the list of materialized messages
@@ -273,21 +278,28 @@ export function materializeMessages(
         openAssistantPartial = null
         openToolJsonByIndex.clear()
         if (!msg || msg.role !== "assistant") break
-        // Surface provider errors so empty error turns aren't silent.
-        // Falls through to the content loop so partial content that
-        // arrived before the failure is preserved above the card.
-        if (
-          (msg.stopReason === "error" || msg.stopReason === "aborted") &&
+        const stopReason = msg.stopReason
+        const aborted = stopReason === "aborted"
+        const errored =
+          stopReason === "error" &&
           typeof msg.errorMessage === "string" &&
           msg.errorMessage.length > 0
-        ) {
-          out.push({
-            role: "error",
-            message: msg.errorMessage,
-            detail: extractProviderErrorDetail(msg.errorMessage),
-            stopReason: msg.stopReason,
-            key: `error-${event.seq}`,
-          })
+        // Flip any *prior* in-flight tools to their terminal
+        // state first — we want the indicator to appear on the
+        // existing card before we push anything new under it.
+        // Tools embedded in this turn's closing content are
+        // emitted in the matching terminal state directly below.
+        //
+        // Aborted turns: the user explicitly stopped the run, so
+        // any in-flight tool calls get the dedicated `interrupted`
+        // status (renders as e.g. "Create File foo.ts canceled")
+        // rather than the hard-failure X. Errored turns keep the
+        // `failed` marker since those usually point at something
+        // the user has to actually fix.
+        if (aborted) {
+          markInFlightToolsTerminal(out, "interrupted")
+        } else if (errored) {
+          markInFlightToolsTerminal(out, "failed")
         }
         for (let j = 0; j < msg.content.length; j++) {
           const block = msg.content[j]
@@ -304,21 +316,57 @@ export function materializeMessages(
               key: `thinking-${event.seq}-${j}`,
             })
           } else if (block.type === "toolCall") {
-            // Emit a `pending` card the instant the assistant turn
-            // closes — pi will fire `tool_execution_start` next, which
-            // promotes this same entry (matched by `toolCallId`) to
-            // `running`. Without this bridge we'd have a brief flash
-            // where the streaming card disappears (partial cleared on
-            // message_end) before the running card appears, which
-            // reads as a flicker on long tool calls.
+            // On a clean turn close we emit `pending` so pi's next
+            // `tool_execution_start` can promote the same card to
+            // `running` (avoids a flicker). When the turn ended in
+            // abort/error there *is* no next tool_execution_start —
+            // pi's agent loop bails before executing — so we mark
+            // the tool's terminal state immediately. Otherwise the
+            // card would sit forever pretending to be queued.
+            // `aborted` (user-requested stop) maps to `interrupted`
+            // so the card reads "canceled"; hard errors stay
+            // `failed` (X marker, plus the error card below).
+            const toolStatus: ToolStatus = aborted
+              ? "interrupted"
+              : errored
+                ? "failed"
+                : "pending"
             out.push(
-              toolMessageFromToolCallBlock(block, "pending", {
+              toolMessageFromToolCallBlock(block, toolStatus, {
                 directory,
                 extraDirectories,
                 argsComplete: true,
               }),
             )
           }
+        }
+        // Trailing markers go *after* the partial content so the
+        // chat reads chronologically: the model streamed some
+        // tokens, then the request died. Putting them above would
+        // make it look like the stop happened first and the
+        // content arrived after it.
+        //
+        // Aborted turns get the thin "Interrupted" divider (same
+        // look as `turn_interrupted` / `AgentReloaded`) — the user
+        // *asked* for the stop, so surfacing it as a failure is
+        // misleading. Dedupe against an immediately-prior
+        // `interrupted` block so a `turn_interrupted` event
+        // followed by an aborted `message_end` doesn't double up.
+        // Hard errors get the error card with the support /
+        // accounts-settings footer since those usually need user
+        // action to fix.
+        if (aborted) {
+          if (out[out.length - 1]?.role !== "interrupted") {
+            out.push({ role: "interrupted", key: `interrupted-${event.seq}` })
+          }
+        } else if (errored) {
+          out.push({
+            role: "error",
+            message: msg.errorMessage as string,
+            detail: extractProviderErrorDetail(msg.errorMessage as string),
+            stopReason: "error",
+            key: `error-${event.seq}`,
+          })
         }
         break
       }
@@ -465,6 +513,18 @@ export function materializeMessages(
       }
       case "interrupted":
       case "turn_interrupted": {
+        // Pi can fire a bare `interrupted` / `turn_interrupted`
+        // event when the user stops a run *before* the assistant
+        // turn closes — e.g. a tool was already executing and the
+        // user hit stop. There's no matching `tool_execution_end`
+        // coming for those tools, and the surrounding `message_end`
+        // (if any) may not arrive with `stopReason: "aborted"`
+        // either (some tools never reach the model). Without this
+        // call the card would spin forever in `running`. Same
+        // semantics as the aborted branch in `message_end`: flip
+        // the in-flight cards to `interrupted` so they read
+        // "canceled" instead of "failed".
+        markInFlightToolsTerminal(out, "interrupted")
         out.push({ role: "interrupted", key: `interrupted-${event.seq}` })
         break
       }
@@ -1060,6 +1120,32 @@ function resolveEditTarget(
   )
   const path = normalizeEditPath(rawPath, directory)
   return { path, directory }
+}
+
+/**
+ * Walk back through the materialized list and flip any tool cards
+ * still in a non-terminal state (`running` / `pending`) to the
+ * supplied terminal status. Called from `message_end` (abort or
+ * error) and from the bare `interrupted` / `turn_interrupted`
+ * branches — pi never emits a closing `tool_execution_end` for
+ * tools that were in flight when the run died, so without this
+ * they'd spin forever in the UI.
+ *
+ * We don't touch already-terminal cards (`completed`, `failed`,
+ * `interrupted`): a tool that finished cleanly — or already got
+ * marked failed by a prior pass — keeps its existing state.
+ */
+function markInFlightToolsTerminal(
+  out: MaterializedMessage[],
+  status: "failed" | "interrupted",
+): void {
+  for (let i = out.length - 1; i >= 0; i--) {
+    const m = out[i]
+    if (m.role !== "tool") continue
+    if (m.status === "running" || m.status === "pending") {
+      out[i] = { ...m, status }
+    }
+  }
 }
 
 function findToolIndexById(

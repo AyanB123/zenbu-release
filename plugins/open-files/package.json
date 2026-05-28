@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Wraps the host's chat tool-call cards for `read`, `edit`, and `write` tools with a click handler that opens the touched file in a new pane (the same way the file-tree sidebar does).",
   "exports": {
     ".": "./zenbu.plugin.ts"
   },

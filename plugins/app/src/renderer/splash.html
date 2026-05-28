@@ -39,19 +39,14 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        /* DO NOT claim `-webkit-app-region: drag` on body. This page
-           is loaded into a splash WebContentsView that the framework
-           leaves attached behind the renderer view when it mounts
-           (`WindowService.openView` doesn't track the splash view
-           and so doesn't `removeChildView` it). The native window's
-           drag region is the UNION of every attached view's drag
-           rects, so a full-body `drag` here keeps the whole window
-           reporting as a title bar long after the splash is visually
-           occluded — every click in the running app then turns into
-           a window-move. The dedicated 30px top strip below claims
-           drag for just the title-bar region, lining up exactly
-           with `<TitleBar />` in the renderer so the union doesn't
-           expand once the renderer is on screen. */
+        /* DO NOT claim `-webkit-app-region: drag` on body. The native
+           window's drag region is the UNION of every attached view's
+           drag rects, so a full-body `drag` here would override the
+           renderer's `no-drag` carve-outs on title-bar buttons. The
+           dedicated 30px top strip below claims drag for just the
+           title-bar region, matching `<TitleBar />` in the renderer.
+           WindowService.openView evicts this view once the renderer
+           is dom-ready, so the strip is only live during boot. */
         -webkit-app-region: no-drag;
         user-select: none;
         -webkit-user-select: none;
@@ -61,10 +56,7 @@
         top: 0;
         left: 0;
         right: 0;
-        /* Matches TITLE_BAR_HEIGHT in components/layout/title-bar.tsx
-           so the splash drag rect and the renderer's title-bar drag
-           rect occupy the same pixels — the union doesn't change
-           shape when the renderer paints on top. */
+        /* Matches TITLE_BAR_HEIGHT in components/layout/title-bar.tsx. */
         height: 30px;
         -webkit-app-region: drag;
         pointer-events: none;

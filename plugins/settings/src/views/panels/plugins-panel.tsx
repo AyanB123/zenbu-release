@@ -278,15 +278,12 @@ function SectionsSidebar({
   matchCountBySection: Map<string, number> | null;
   itemsBySection: Map<string, Item[]>;
 }) {
-  // View-mode sections don't have countable items, so suppress
-  // the trailing count badge in that case to avoid showing "0".
-  const hasItems = (s: Section) => s.body.kind === "items";
+
   return (
     <nav className="flex w-[220px] shrink-0 flex-col gap-0.5 overflow-y-auto pr-1">
       {sections.map((section) => {
         const isActive = section.id === activeSectionId;
         const matchCount = matchCountBySection?.get(section.id);
-        const totalCount = itemsBySection.get(section.id)?.length ?? 0;
         return (
           <button
             key={section.id}
@@ -326,10 +323,6 @@ function SectionsSidebar({
                   0
                 </span>
               )
-            ) : hasItems(section) ? (
-              <span className="shrink-0 text-[10px] text-muted-foreground">
-                {totalCount}
-              </span>
             ) : null}
           </button>
         );

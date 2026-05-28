@@ -44,13 +44,19 @@ function VimRegistrar() {
     kind: "cm.composer-extension-editable",
     label: "Vim mode",
   })
-  // Status-bar item — same registry, different kind. The host
-  // `AppStatusBar` renders every component registered under
-  // `status-bar.right-item` in its right slot.
+  // Status-bar item — same registry, different kind. The
+  // `pi-footer` plugin's container renders every component
+  // registered under `pi-footer.item` (anchored to `position`,
+  // sorted by `order`).
   useRegisterFunction(
     "cm-vim.status-bar.vim-mode",
     VimModeStatusItem,
-    { kind: "status-bar.right-item", label: "Vim mode" },
+    {
+      kind: "pi-footer.item",
+      label: "Vim mode",
+      position: "right",
+      order: 10,
+    },
   )
   return null
 }

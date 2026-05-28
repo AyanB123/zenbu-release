@@ -1,11 +1,13 @@
 import { useMemo, useRef } from "react"
-import { ArchiveRestoreIcon, LayersIcon } from "lucide-react"
+import { ArchiveRestoreIcon, Trash2Icon } from "lucide-react"
 import { useDb, useDbClient } from "@zenbujs/core/react"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@zenbu/ui/dropdown-menu"
 import { Button } from "@zenbu/ui/button"
@@ -15,22 +17,26 @@ import type { Schema } from "@host/main/schema"
 
 type Scope = Schema["scopes"][string]
 type Repo = Schema["repos"][string]
+type Session = Schema["sessions"][string]
+type Chat = Schema["chats"][string]
 
 /**
- * Bottom-of-sidebar entrypoint into the "archived worktrees"
- * bucket. Renders nothing when the active workspace has no
- * archived worktrees; the moment one shows up, an abstract
+ * Bottom-of-sidebar entrypoint into the "archived" bucket.
+ * Renders nothing when the active workspace has no archived
+ * worktrees and no archived chats; otherwise an abstract
  * stacked-layers icon appears in the footer slot.
  *
- * UI shape: a single `DropdownMenu` listing every archived
- * worktree in the active workspace. Clicking a row flips
- * `archived` back to false and clears `archivedAt`, popping the
- * worktree back into the regular sidebar group list.
+ * UI shape: a single `DropdownMenu` whose root contains up to
+ * two `DropdownMenuSub` entries — "Archived Worktrees" and
+ * "Archived Chats". Empty buckets are omitted entirely so the
+ * user never sees a dead sub-trigger; if only one bucket has
+ * anything in it, only that one renders. Hovering a category
+ * opens a flyout sub-menu with one row per archived item;
+ * clicking a row flips the relevant `archived` flag back to
+ * false, popping it back into the regular sidebar.
  *
- * (Until recently this menu had two parallel sub-menus for
- * "Archived" and "Completed" buckets; the `completed` flag was
- * removed from the schema in migration 73 and everything folded
- * into the single archive bucket.)
+ * The trigger itself shows no count badge — the icon's presence
+ * is the signal.
  */
 export function WorktreeShelfMenu() {
   const activeWorkspaceId = useActiveWorkspaceId()
@@ -46,14 +52,21 @@ export function WorktreeShelfMenu() {
   // (See zenbu-labs/zenbu.js#11.)
   const scopesById = useDb(root => root.app.scopes)
   const reposById = useDb(root => root.app.repos)
+  const sessionsById = useDb(root => root.app.sessions)
+  const sessionMetaById = useDb(root => root.app.sessionMeta)
+  const chatsById = useDb(root => root.app.chats)
 
   type ShelfEntry = {
     id: string
     label: string
-    archivedAt: number | null
+    timestamp: number | null
   }
 
-  const entries = useMemo<ShelfEntry[]>(() => {
+  // Archived worktrees in the active workspace, newest-archived
+  // first. The `archivedAt` stamp drives the order; legacy
+  // entries without a timestamp fall to the bottom but stay
+  // grouped by id so the order is still deterministic.
+  const worktreeEntries = useMemo<ShelfEntry[]>(() => {
     if (!activeWorkspaceId) return []
     const out: ShelfEntry[] = []
     for (const scope of Object.values(scopesById)) {
@@ -66,22 +79,61 @@ export function WorktreeShelfMenu() {
       out.push({
         id: scope.id,
         label: labelForScope(scope, repo ?? null),
-        archivedAt: scope.archivedAt,
+        timestamp: scope.archivedAt,
       })
     }
-    // Most-recently-archived first so the freshest shelf is at
-    // the top. Entries without a timestamp (legacy data
-    // pre-migration) fall to the bottom but stay grouped by id so
-    // the order is still deterministic.
     out.sort(
       (a, b) =>
-        (b.archivedAt ?? 0) - (a.archivedAt ?? 0) ||
+        (b.timestamp ?? 0) - (a.timestamp ?? 0) ||
         a.id.localeCompare(b.id),
     )
     return out
   }, [activeWorkspaceId, scopesById, reposById])
 
-  const unarchive = (scopeId: string) => {
+  // Archived chats = archived sessions whose owning chat lives in
+  // a scope inside the active workspace. The session itself is
+  // the unit of archiving; we pick one chat to identify it for
+  // the unarchive click target. Sessions carry no `archivedAt`
+  // stamp, so we lean on `lastActivityAt` for ordering.
+  const chatEntries = useMemo<ShelfEntry[]>(() => {
+    if (!activeWorkspaceId) return []
+    const scopeIdsInWorkspace = new Set<string>()
+    for (const scope of Object.values(scopesById)) {
+      if (scope.workspaceId !== activeWorkspaceId) continue
+      scopeIdsInWorkspace.add(scope.id)
+    }
+    if (scopeIdsInWorkspace.size === 0) return []
+    const out: ShelfEntry[] = []
+    const seen = new Set<string>()
+    for (const chat of Object.values(chatsById) as Chat[]) {
+      if (chat.session.kind !== "ready") continue
+      if (!scopeIdsInWorkspace.has(chat.scopeId)) continue
+      const sid = chat.session.sessionId
+      if (seen.has(sid)) continue
+      const session: Session | undefined = sessionsById[sid]
+      if (!session || !session.archived) continue
+      seen.add(sid)
+      out.push({
+        id: sid,
+        label: labelForSession(session, sessionMetaById[sid]),
+        timestamp: session.lastActivityAt ?? null,
+      })
+    }
+    out.sort(
+      (a, b) =>
+        (b.timestamp ?? 0) - (a.timestamp ?? 0) ||
+        a.id.localeCompare(b.id),
+    )
+    return out
+  }, [
+    activeWorkspaceId,
+    scopesById,
+    chatsById,
+    sessionsById,
+    sessionMetaById,
+  ])
+
+  const unarchiveWorktree = (scopeId: string) => {
     void dbClient.update(root => {
       const scope = root.app.scopes[scopeId]
       if (!scope) return
@@ -90,15 +142,22 @@ export function WorktreeShelfMenu() {
     })
   }
 
-  // Hide the whole control when there's nothing to show. An
-  // always-on icon would be visually noisy on a fresh workspace.
-  if (entries.length === 0) return null
+  const unarchiveChat = (sessionId: string) => {
+    void dbClient.update(root => {
+      const session = root.app.sessions[sessionId]
+      if (!session) return
+      session.archived = false
+    })
+  }
 
-  const triggerLabel = `Archived worktrees (${entries.length})`
+  // Hide the whole control when there's nothing in either
+  // bucket. An always-on icon would be visually noisy on a fresh
+  // workspace.
+  if (worktreeEntries.length === 0 && chatEntries.length === 0) return null
 
   return (
     <DropdownMenu>
-      <HoverTip label={triggerLabel} setAriaLabel={false}>
+      <HoverTip label="Archived" setAriaLabel={false}>
         <DropdownMenuTrigger asChild>
           <Button
             ref={buttonRef}
@@ -106,9 +165,9 @@ export function WorktreeShelfMenu() {
             variant="ghost"
             size="icon-xs"
             className="hg-icon size-[22px] rounded bg-transparent text-muted-foreground hover:bg-transparent"
-            aria-label={triggerLabel}
+            aria-label="Archived"
           >
-            <LayersIcon size={13} />
+            <Trash2Icon size={13} />
           </Button>
         </DropdownMenuTrigger>
       </HoverTip>
@@ -116,19 +175,56 @@ export function WorktreeShelfMenu() {
         align="start"
         side="top"
         sideOffset={6}
-        className="max-h-[320px] w-64 overflow-y-auto"
+        className="w-56"
       >
-        <DropdownMenuLabel className="flex items-center justify-between text-[11px] font-medium text-muted-foreground">
-          <span>Archived</span>
-          <span className="tabular-nums">{entries.length}</span>
-        </DropdownMenuLabel>
+        {worktreeEntries.length > 0 ? (
+          <BucketSub
+            label="Archived Worktrees"
+            entries={worktreeEntries}
+            onPick={unarchiveWorktree}
+          />
+        ) : null}
+        {chatEntries.length > 0 ? (
+          <BucketSub
+            label="Archived Chats"
+            entries={chatEntries}
+            onPick={unarchiveChat}
+          />
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+type BucketSubProps = {
+  label: string
+  entries: ReadonlyArray<{
+    id: string
+    label: string
+    timestamp: number | null
+  }>
+  onPick: (id: string) => void
+}
+
+/**
+ * One category row in the root menu, with a hover-flyout
+ * sub-menu listing every item in the bucket. Only rendered by
+ * the caller when `entries` is non-empty.
+ */
+function BucketSub({ label, entries, onPick }: BucketSubProps) {
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>
+        <span className="flex-1">{label}</span>
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className="max-h-[320px] w-64 overflow-y-auto">
         {entries.map(entry => {
           const subtitle =
-            entry.archivedAt != null ? formatRelative(entry.archivedAt) : null
+            entry.timestamp != null ? formatRelative(entry.timestamp) : null
           return (
             <DropdownMenuItem
               key={entry.id}
-              onSelect={() => unarchive(entry.id)}
+              onSelect={() => onPick(entry.id)}
               // Hint at the "click to restore" behavior via the
               // row's primary glyph.
               className="gap-2"
@@ -143,8 +239,8 @@ export function WorktreeShelfMenu() {
             </DropdownMenuItem>
           )
         })}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
   )
 }
 
@@ -159,6 +255,17 @@ function labelForScope(scope: Scope, repo: Repo | null): string {
   }
   const parts = scope.directory.split("/").filter(Boolean)
   return parts[parts.length - 1] ?? scope.directory
+}
+
+/** Label for an archived chat row: the AI-generated summary if
+ * one has landed, else the session's title. */
+function labelForSession(
+  session: Session,
+  meta: Schema["sessionMeta"][string] | undefined,
+): string {
+  const summary = meta?.summary?.text?.trim()
+  if (summary) return summary
+  return session.title || "Untitled chat"
 }
 
 /** Tiny relative-time formatter for the detail rows. Stays

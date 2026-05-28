@@ -43,7 +43,7 @@ export type ActiveView =
  * the host shell). Any other string is a view `type` from the view
  * registry tagged `meta.kind = "left-sidebar"` — plugins surface
  * their own tabs by registering such a view (see
- * `plugins/extra-dirs-sidebar` for a worked example).
+ * `plugins/marketplace` for a worked example).
  */
 export type LeftSidebarTab = string
 

@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Read by Zenbu main process so the native BaseWindow's
+         backgroundColor matches this page before paint. -->
+    <meta name="zenbu-bg" content="#f4f4f4" media="(prefers-color-scheme: light)" />
+    <meta name="zenbu-bg" content="#1a1a1a" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Updating…</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        background: #f4f4f4;
+        color: #1a1a1a;
+        color-scheme: light dark;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter,
+          system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      @media (prefers-color-scheme: dark) {
+        html,
+        body {
+          background: #1a1a1a;
+          color: #ededed;
+        }
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        -webkit-app-region: no-drag;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      /* Title-bar drag region. Matches splash.html / the renderer's
+         TitleBar so the window stays draggable from the top strip. */
+      .drag-strip {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 30px;
+        -webkit-app-region: drag;
+        pointer-events: none;
+      }
+      .icon {
+        width: 72px;
+        height: 72px;
+        image-rendering: -webkit-optimize-contrast;
+        pointer-events: none;
+      }
+      /* Mirrors `.text-shimmer` in main.css: a left\u2192right luminance sweep
+         masked to text. Inlined here (instead of importing the renderer
+         stylesheet) because this page lives outside the renderer build. */
+      @keyframes loading-shimmer {
+        0% {
+          background-position: 200% 0;
+        }
+        100% {
+          background-position: -200% 0;
+        }
+      }
+      .label {
+        font-size: 13px;
+        font-weight: 500;
+        letter-spacing: -0.005em;
+        background-image: linear-gradient(
+          to right,
+          rgba(26, 26, 26, 0.35) 0%,
+          rgba(26, 26, 26, 1) 50%,
+          rgba(26, 26, 26, 0.35) 100%
+        );
+        background-size: 200% 100%;
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        animation: loading-shimmer 1.6s linear infinite;
+      }
+      @media (prefers-color-scheme: dark) {
+        .label {
+          background-image: linear-gradient(
+            to right,
+            rgba(237, 237, 237, 0.35) 0%,
+            rgba(237, 237, 237, 1) 50%,
+            rgba(237, 237, 237, 0.35) 100%
+          );
+        }
+      }
+      /* Failure state: the icon disappears, the label stops shimmering
+         and turns red, and a scrollable <pre> shows the underlying
+         error so we can read what actually went wrong. */
+      body[data-state="error"] .icon {
+        display: none;
+      }
+      body[data-state="error"] .label {
+        background: none;
+        -webkit-background-clip: initial;
+        background-clip: initial;
+        color: #b91c1c;
+        animation: none;
+      }
+      @media (prefers-color-scheme: dark) {
+        body[data-state="error"] .label {
+          color: #fca5a5;
+        }
+      }
+      .error {
+        margin: 0 16px;
+        max-width: 100%;
+        padding: 10px 12px;
+        border-radius: 6px;
+        background: rgba(220, 38, 38, 0.08);
+        color: #b91c1c;
+        font-size: 11px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+        word-break: break-word;
+        text-align: left;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        max-height: 140px;
+        overflow: auto;
+        display: none;
+      }
+      body[data-state="error"] .error {
+        display: block;
+      }
+      @media (prefers-color-scheme: dark) {
+        .error {
+          background: rgba(248, 113, 113, 0.1);
+          color: #fca5a5;
+        }
+      }
+      .actions {
+        display: none;
+        gap: 8px;
+      }
+      body[data-state="error"] .actions {
+        display: flex;
+      }
+      button {
+        font: inherit;
+        font-size: 11px;
+        font-weight: 500;
+        padding: 4px 10px;
+        border-radius: 5px;
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        background: rgba(0, 0, 0, 0.03);
+        color: inherit;
+      }
+      button:hover {
+        background: rgba(0, 0, 0, 0.06);
+      }
+      @media (prefers-color-scheme: dark) {
+        button {
+          border-color: rgba(255, 255, 255, 0.14);
+          background: rgba(255, 255, 255, 0.04);
+        }
+        button:hover {
+          background: rgba(255, 255, 255, 0.08);
+        }
+      }
+    </style>
+  </head>
+  <body data-state="loading">
+    <div class="drag-strip" aria-hidden="true"></div>
+    <img class="icon" src="./icon.png" alt="" />
+    <div class="label" id="label">Updating</div>
+    <pre class="error" id="error"></pre>
+    <div class="actions" id="actions">
+      <button id="quitBtn" type="button">Quit</button>
+    </div>
+
+    <script>
+      const labelEl = document.getElementById("label");
+      const errorEl = document.getElementById("error");
+      const quitBtn = document.getElementById("quitBtn");
+
+      function showError(payload) {
+        document.body.dataset.state = "error";
+        labelEl.textContent = "Update failed";
+        errorEl.textContent =
+          (payload && payload.message) ||
+          "An unknown error occurred during the update.";
+      }
+
+      // window.zenbuInstall is exposed by @zenbujs/core's installing-preload.cjs.
+      // We ignore phase / message / progress events on purpose \u2014 the user only
+      // sees one shimmering label until the relaunch lands or until something
+      // fails, at which point we surface the real error.
+      const api = window.zenbuInstall;
+      if (api) {
+        api.on("error", (p) => showError(p || {}));
+      }
+
+      quitBtn.addEventListener("click", () => window.close());
+    </script>
+  </body>
+</html>

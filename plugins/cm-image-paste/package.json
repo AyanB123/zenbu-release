@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Intercepts paste events with image payloads in the composer, persists bytes via createBlob, populates the renderer image cache, and inserts an `@blob:<id>` pill token at the caret. Contributes a `cm.composer-extension` to every composer.",
   "exports": {
     ".": "./zenbu.plugin.ts"
   },

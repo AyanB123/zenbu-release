@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Right-sidebar plugin: renders the active session's context-window usage as a component view (rendering: 'component'). Reads `root.app.sessions[...].stats` straight off the host's replica.",
   "exports": {
     ".": "./zenbu.plugin.ts"
   },

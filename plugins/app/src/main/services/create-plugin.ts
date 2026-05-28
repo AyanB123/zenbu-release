@@ -5,8 +5,8 @@ import path from "node:path"
 import { spawn } from "node:child_process"
 import { nanoid } from "nanoid"
 import { Service } from "@zenbujs/core/runtime"
-import { DbService, RpcService } from "@zenbujs/core/services"
-import { ReposService } from "./repos"
+import { RpcService } from "@zenbujs/core/services"
+import { getBundledPaths } from "@zenbujs/core/env-bootstrap"
 
 export type CreatePluginArgs = {
   /** Lowercase-hyphen plugin name. Must match `/^[a-z][a-z0-9-]*$/`. */
@@ -20,56 +20,42 @@ export type CreatePluginResult = {
 const PLUGIN_NAME_RE = /^[a-z][a-z0-9-]*$/
 
 /**
- * Drives the "Create Plugin" action invoked from
- * the inline "Create Plugin" pane in the plugins sidebar.
+ * Drives the "Create Plugin" action invoked from the marketplace
+ * sidebar's inline Create pane.
  *
- * Layout note: a plugin is two adjacent things on disk, not one.
+ * A plugin is now a single thing on disk: a standalone zenbu plugin
+ * folder at `~/.zenbu/plugins/<name>`. The previous implementation
+ * also created a git worktree of a "plugin host" workspace and
+ * threaded the plugin into its `zenbu.config.ts`, but that flow
+ * required the user to have a special `kind: "plugin"` workspace
+ * configured ahead of time and made the Create flow fail
+ * mysteriously on a fresh install.
  *
- *   - The **plugin source** is a standalone zenbu plugin folder at
- *     `~/.zenbu/plugins/<name>`. It does NOT live inside the host
- *     repo's `packages/` — that's the monorepo nesting we
- *     explicitly want to avoid for scalability + portability.
- *   - The **worktree** is a git worktree of a host-app repo,
- *     placed as a sibling of the main worktree
- *     at `<parentOf(mainWorktreePath)>/<repoName>-<name>` (same
- *     default the "New worktree" dialog uses), on a fresh branch
- *     `<name>`. The chat scope's primary cwd is this
- *     worktree, so the agent has full access to the host app's
- *     source when it needs to wire the new plugin into things
- *     (e.g. add it to `zenbu.config.ts`, depend on its types,
- *     etc.). Per-plugin worktrees keep parallel plugin work
- *     isolated and reversible (delete the branch + worktree = the
- *     plugin's host wiring is gone).
+ * The simpler model:
  *
- * The plugin path is added to the scope's `extraDirectories` so
- * `SessionsService` injects its AGENTS.md and a "this dir is
- * available" line into the system prompt. From the agent's point
- * of view, both directories are first-class working directories.
+ *   1. Validate the name.
+ *   2. Scaffold the plugin via `<bundled pnpm> dlx
+ *      create-zenbu-app@latest --plugin --yes --no-git
+ *      --depends-on app=<currentHost>/zenbu.config.ts <name>`,
+ *      with cwd `~/.zenbu/plugins/`. The CLI lands the plugin at
+ *      `~/.zenbu/plugins/<name>` and points its `dependsOn` at the
+ *      currently-running host so the plugin gets typed access out
+ *      of the box.
+ *   3. Emit `createPluginDone { pluginName, pluginPath }`. The
+ *      marketplace sidebar's handler picks that up and calls
+ *      `pluginsRootView.openPluginInNewWindow`, which lazily
+ *      creates a `kind: "plugin"` workspace + scope keyed by the
+ *      plugin's name and opens a new window at `pluginPath` (see
+ *      `plugin-window.ts`).
  *
- * Pipeline (each step streams a `createPluginProgress` event so the
- * dialog log keeps moving; one final `createPluginDone` emits on
- * exit with `{ scopeId, chatId }` on success):
- *
- *   1. Locate a `kind: "plugin"` workspace + scope to use as
- *      the host repo for the new worktree.
- *   2. `ReposService.createWorktree` at the worktree path on
- *      branch `<name>`.
- *   3. `npx create-zenbu-app --plugin --yes --no-git --depends-on
- *      app=<worktree>/zenbu.config.ts <name>` with cwd =
- *      `~/.zenbu/plugins/`, so the scaffold lands at
- *      `~/.zenbu/plugins/<name>` and the CLI wires the plugin into
- *      the worktree's host config.
- *   4. Prepend an AGENTS.md prelude to the worktree root (the
- *      agent's cwd) describing where the plugin lives. The
- *      plugin's own AGENTS.md ships with the scaffold's zenbu
- *      docs and is loaded automatically via `extraDirectories`.
- *   5. Materialize a scope in the plugin-kind workspace at the
- *      worktree path with `extraDirectories = [pluginPath]` and
- *      `pluginName = <name>`, plus a pending chat in it.
+ * Each step emits a `createPluginProgress` event so the renderer's
+ * Creating\u2026 pane has something to render. The final
+ * `createPluginDone` event ships `pluginPath` so the renderer can
+ * skip the registry-mirror round-trip when opening the window.
  */
 export class CreatePluginService extends Service.create({
   key: "createPlugin",
-  deps: { rpc: RpcService, db: DbService, repos: ReposService },
+  deps: { rpc: RpcService },
 }) {
   async createPlugin(args: CreatePluginArgs): Promise<CreatePluginResult> {
     const trimmed = args.name?.trim() ?? ""
@@ -80,43 +66,20 @@ export class CreatePluginService extends Service.create({
       )
     }
 
-    // Validate prerequisites *here*, synchronously, so failures
-    // surface as a normal RPC error the caller can `try/catch`.
-    //
-    // Used to live inside `run()`, which fires from a
-    // `queueMicrotask` after this method returns. That created a
-    // race: on a fresh install with no plugin-kind workspace, the
-    // microtask threw immediately and emitted a
-    // `createPluginDone(ok: false)` event — often *before* the
-    // renderer's IPC response came back and its event subscriber
-    // attached. The event was lost and the UI hung on "Creating…"
-    // forever with no visible error. Doing the check before we
-    // hand back a runId means there's nothing for the renderer to
-    // miss.
-    const root = this.ctx.db.client.readRoot()
-    const pluginHost = Object.values(root.app.workspaces).find(
-      w => w.kind === "plugin" && !w.archived,
-    )
-    if (!pluginHost) {
-      throw new Error(
-        "no plugin-kind workspace available — create a workspace and mark it as a plugin workspace before running 'New Plugin'",
-      )
-    }
-    const hostScope = Object.values(root.app.scopes).find(
-      s => s.workspaceId === pluginHost.id && !s.archived && !s.completed,
-    )
-    if (!hostScope?.repoId) {
-      throw new Error(
-        "plugin host workspace has no repo — cannot create a worktree for the plugin",
-      )
-    }
-    if (!root.app.repos[hostScope.repoId]) {
-      throw new Error(`unknown repo ${hostScope.repoId}`)
+    // Pre-flight collision check: the scaffold CLI errors with a
+    // confusing "directory not empty" message if the plugin dir
+    // already exists. Catch it here so the renderer gets a clean
+    // error message before we even queue the microtask.
+    const zenbuHome = path.join(os.homedir(), ".zenbu")
+    const pluginsRoot = path.join(zenbuHome, "plugins")
+    const pluginPath = path.join(pluginsRoot, trimmed)
+    if (fs.existsSync(pluginPath)) {
+      throw new Error(`${pluginPath} already exists`)
     }
 
     const runId = nanoid()
     queueMicrotask(() => {
-      void this.run(runId, trimmed).catch(err => {
+      void this.run(runId, trimmed, pluginPath, pluginsRoot).catch(err => {
         const message = err instanceof Error ? err.message : String(err)
         this.ctx.rpc.emit.app.createPluginDone({
           runId,
@@ -128,178 +91,97 @@ export class CreatePluginService extends Service.create({
     return { runId }
   }
 
-  private async run(runId: string, name: string): Promise<void> {
+  private async run(
+    runId: string,
+    name: string,
+    pluginPath: string,
+    pluginsRoot: string,
+  ): Promise<void> {
     const emit = this.ctx.rpc.emit.app
     const step = (line: string) =>
       emit.createPluginProgress({ runId, line, stream: "step" })
 
-    // -- 1. Re-resolve the plugin-kind host workspace + repo.
-    //
-    // `createPlugin` already validated that these exist before
-    // handing us a runId, so the lookups below shouldn't return
-    // null in practice. We re-read against the live snapshot
-    // anyway (rather than threading state through), so if the
-    // workspace was archived between the validation and the
-    // microtask we error out cleanly via the `.catch` wrapper
-    // around `run()`.
-    const root = this.ctx.db.client.readRoot()
-    const pluginHost = Object.values(root.app.workspaces).find(
-      w => w.kind === "plugin" && !w.archived,
-    )
-    if (!pluginHost) {
-      throw new Error(
-        "no plugin-kind workspace available \u2014 it may have been archived since the create flow started",
-      )
-    }
-    const hostScope = Object.values(root.app.scopes).find(
-      s => s.workspaceId === pluginHost.id && !s.archived,
-    )
-    const repoId = hostScope?.repoId ?? null
-    if (!repoId) {
-      throw new Error(
-        "plugin host workspace has no repo \u2014 cannot create a worktree for the plugin",
-      )
-    }
-    const repo = root.app.repos[repoId]
-    if (!repo) throw new Error(`unknown repo ${repoId}`)
-
-    const zenbuHome = path.join(os.homedir(), ".zenbu")
-    const pluginsRoot = path.join(zenbuHome, "plugins")
-    const pluginPath = path.join(pluginsRoot, name)
-    // Match the "New worktree" dialog's default path:
-    //   <parentOf(mainWorktreePath)>/<repoName>-<name>
-    // This puts the worktree alongside the host repo (typically
-    // in the user's home dir) instead of buried under
-    // `~/.zenbu/plugin-worktrees/`, which makes it easy to find
-    // with normal file-system tooling.
-    const worktreeParent = path.dirname(repo.mainWorktreePath)
-    const repoName = path.basename(repo.mainWorktreePath)
-    const safeBranch = name.replace(/[/\\:]+/g, "-")
-    const worktreePath = path.join(worktreeParent, `${repoName}-${safeBranch}`)
-
-    if (fs.existsSync(pluginPath)) {
-      throw new Error(`${pluginPath} already exists`)
-    }
-    if (fs.existsSync(worktreePath)) {
-      throw new Error(`${worktreePath} already exists`)
-    }
-
-    // The plugin leaf is created by `create-zenbu-app`, which does
-    // not run `mkdir -p` on its parent. Make sure that exists. The
-    // worktree parent is the main worktree's parent, which always
-    // exists already (it's where the host repo lives).
+    // The plugin leaf is created by `create-zenbu-app`; ensure its
+    // parent (`~/.zenbu/plugins/`) exists since the CLI doesn't
+    // `mkdir -p` for you.
     await fsp.mkdir(pluginsRoot, { recursive: true })
 
-    // -- 2. Worktree
-    step(`Creating git worktree at ${worktreePath} (branch ${name})\u2026`)
-    const wtResult = await this.ctx.repos.createWorktree({
-      repoId,
-      worktreePath,
-      branch: name,
-      sourceRef: undefined,
-      createBranch: true,
-    })
-    if (!wtResult.ok) {
-      throw new Error(wtResult.error ?? "git worktree add failed")
-    }
-    step("Worktree created.")
-
-    // -- 3. Scaffold the plugin at ~/.zenbu/plugins/<name>
+    // Wire the new plugin into the currently-running host's
+    // `zenbu.config.ts` via the scaffold's `--depends-on` flag. The
+    // CLI uses this both to populate the plugin's `dependsOn`
+    // (typed RPC + events) and to append the plugin to the host's
+    // `plugins:` array so the next reload picks it up.
     //
-    // We point `--depends-on app=<worktree>/zenbu.config.ts` at the
-    // worktree's host config, which is what the scaffold treats as
-    // the "host". Without `--no-add-to-host` this also appends the
-    // new plugin to that host config's `plugins:` array, so the
-    // worktree's dev server can load it. `--no-git` is required
-    // because the parent dir (`~/.zenbu/plugins`) isn't itself a
-    // git repo and we don't want the CLI to init one for us.
-    const hostConfig = path.join(worktreePath, "zenbu.config.ts")
+    // Walk up from cwd to find the host's `zenbu.config.ts`. In
+    // Electron the working directory at boot is the project root,
+    // so this terminates on the first iteration; the loop is just
+    // a defensive fallback.
+    const hostRoot = findProjectRoot()
+    const hostConfig = path.join(hostRoot, "zenbu.config.ts")
     const dependsOn = `app=${hostConfig}`
+
+    // We don't shell out through `npx` because (a) `npx` may not
+    // be on the user's $PATH and (b) we already ship a pinned
+    // pnpm with the app, so using it makes the scaffold step
+    // reproducible regardless of the user's system tooling. Falls
+    // back to `pnpm` on $PATH if the bundled binary isn't
+    // materialized yet (dev mode without a launcher having written
+    // `~/.zenbu/.internal/paths.json`).
     step(`Scaffolding plugin (create-zenbu-app --plugin ${name})\u2026`)
-    await this.spawnLogged(runId, "npx", [
-      "-y",
-      "create-zenbu-app@latest",
-      "--plugin",
-      "--yes",
-      "--no-git",
-      "--depends-on",
-      dependsOn,
-      name,
-    ], { cwd: pluginsRoot })
+    const pnpmBin = this.resolvePnpm()
+    // `--no-add-to-host` keeps the scaffold from touching the
+    // running host's `zenbu.config.ts#plugins[]`. Without it, the
+    // CLI mutates the live config file, the framework's file
+    // watcher sees the edit, hot-reloads the entire app mid-create,
+    // and the renderer's create-pane gets torn down before the
+    // `createPluginDone` event arrives. The plugin's own
+    // `dependsOn` (typed access to the host) is still wired by the
+    // `--depends-on` flag — only the host-config append is
+    // skipped. The user installs the plugin into the host
+    // explicitly later via the title-bar Install button.
+    await this.spawnLogged(
+      runId,
+      pnpmBin,
+      [
+        "dlx",
+        "create-zenbu-app@latest",
+        "--plugin",
+        "--yes",
+        "--no-git",
+        "--no-add-to-host",
+        "--depends-on",
+        dependsOn,
+        name,
+      ],
+      { cwd: pluginsRoot },
+    )
 
     if (!fs.existsSync(pluginPath)) {
       throw new Error(`scaffold finished but ${pluginPath} is missing`)
     }
-
-    // -- 4. AGENTS.md prelude at the worktree root.
-    //
-    // The chat scope below points at the worktree, so this is the
-    // AGENTS.md the agent reads at the start of every turn. The
-    // plugin's own AGENTS.md (under `~/.zenbu/plugins/<name>/`)
-    // ships with the scaffold's full zenbu docs and is loaded
-    // automatically via `SessionsService`' extra-dirs injection;
-    // we don't need to touch it.
-    step("Updating AGENTS.md\u2026")
-    await this.prependAgentsPrelude(worktreePath, name, pluginPath)
-
-    // -- 5. Materialize plugin-host-workspace scope + chat
-    step("Materializing sidebar entry\u2026")
-    const scopeId = nanoid()
-    const chatId = nanoid()
-    const now = Date.now()
-    const workspaceId = pluginHost.id
-    await this.ctx.db.client.update(root => {
-      // Guard against a parallel `import-worktrees` materializing
-      // the same path first. Reuse if so, then tag it as a plugin
-      // scope and make sure the plugin dir is in extraDirectories.
-      const existing = Object.values(root.app.scopes).find(
-        s => s.workspaceId === workspaceId && s.directory === worktreePath,
-      )
-      const finalScopeId = existing?.id ?? scopeId
-      if (!existing) {
-        root.app.scopes[finalScopeId] = {
-          id: finalScopeId,
-          workspaceId,
-          directory: worktreePath,
-          repoId,
-          extraDirectories: [pluginPath],
-          createdAt: now,
-          archived: false,
-          archivedAt: null,
-          pinnedAt: null,
-          unpinnedAt: null,
-          pluginName: name,
-        }
-      } else {
-        if (existing.archived) {
-          existing.archived = false
-          existing.archivedAt = null
-        }
-        existing.pluginName = name
-        if (!existing.extraDirectories.includes(pluginPath)) {
-          existing.extraDirectories = [
-            ...existing.extraDirectories,
-            pluginPath,
-          ]
-        }
-      }
-      root.app.chats[chatId] = {
-        id: chatId,
-        scopeId: finalScopeId,
-        session: { kind: "pending" },
-        createdAt: now,
-      }
-    })
 
     step("Done.")
     emit.createPluginDone({
       runId,
       ok: true,
       pluginName: name,
-      worktreePath,
-      scopeId,
-      chatId,
+      pluginPath,
     })
+  }
+
+  /**
+   * Locate the bundled pnpm binary the launcher materializes into
+   * `~/Library/Caches/Zenbu/bin/pnpm`. We read its path from the
+   * `getBundledPaths()` framework API so a future move of the
+   * cache dir doesn't fork this lookup. Falls back to `pnpm` on
+   * $PATH when the file isn't there (dev mode without a launcher).
+   */
+  private resolvePnpm(): string {
+    try {
+      const paths = getBundledPaths()
+      if (paths.pnpmPath) return paths.pnpmPath
+    } catch {}
+    return "pnpm"
   }
 
   private spawnLogged(
@@ -350,43 +232,22 @@ export class CreatePluginService extends Service.create({
       })
     })
   }
+}
 
-  /**
-   * Prepend a short header to the worktree root's AGENTS.md so the
-   * agent immediately knows it's working in a plugin development
-   * sandbox and where the plugin source actually lives. The plugin
-   * source path is also in `scope.extraDirectories`, so
-   * `SessionsService` will load that dir's own AGENTS.md (the
-   * scaffold template inlines the full zenbu docs there).
-   */
-  private async prependAgentsPrelude(
-    worktreePath: string,
-    name: string,
-    pluginPath: string,
-  ): Promise<void> {
-    const agentsPath = path.join(worktreePath, "AGENTS.md")
-    let existing = ""
-    try {
-      existing = await fsp.readFile(agentsPath, "utf-8")
-    } catch (err) {
-      // AGENTS.md may legitimately be missing. Treat that as
-      // "write a fresh file with just our prelude".
-      existing = ""
-    }
-    const prelude =
-      `# Plugin: ${name}\n\n` +
-      `You are helping the user build a new Zenbu.js plugin named \`${name}\`.\n\n` +
-      `**Primary working directory (cwd):** \`${worktreePath}\` \u2014 a git worktree\n` +
-      `of the host app's source on branch \`${name}\`. Use this when you need to\n` +
-      `wire the new plugin into the host (\`zenbu.config.ts\`, host types, etc.).\n\n` +
-      `**Plugin source directory:** \`${pluginPath}\` \u2014 the standalone plugin\n` +
-      `folder. This is in the session's \`extraDirectories\`, so its AGENTS.md\n` +
-      `(which contains the Zenbu.js documentation) is already loaded into your\n` +
-      `context. When the user asks you to make changes to "the plugin", default\n` +
-      `to editing files under \`${pluginPath}\`.\n\n` +
-      `Keep changes scoped to the plugin folder unless the user explicitly asks\n` +
-      `you to modify the host worktree.\n\n` +
-      `---\n\n`
-    await fsp.writeFile(agentsPath, prelude + existing, "utf-8")
+/**
+ * Walk up from `process.cwd()` looking for a directory that
+ * contains `zenbu.config.ts`. Inlined here (instead of imported
+ * from the plugin-installer plugin) because the host `app` plugin
+ * sits at the bottom of the dependency graph and shouldn't take a
+ * dep on a downstream plugin.
+ */
+function findProjectRoot(startDir?: string): string {
+  let dir = startDir ?? process.cwd()
+  for (let i = 0; i < 12; i++) {
+    if (fs.existsSync(path.join(dir, "zenbu.config.ts"))) return dir
+    const parent = path.dirname(dir)
+    if (parent === dir) break
+    dir = parent
   }
+  return startDir ?? process.cwd()
 }

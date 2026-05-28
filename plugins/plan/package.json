@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Plan tool for hackable-gui: contributes a Pi extension that lets the agent author Markdown plans, a chat-message advice that renders a 'Open Plan' card for plan tool results, and a split-pane view that renders the plan as Markdown (with mermaid support).",
   "exports": {
     ".": "./zenbu.plugin.ts"
   },

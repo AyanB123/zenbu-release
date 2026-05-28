@@ -1,0 +1,12 @@
+{
+  "id": "74c81d77-ded1-492d-b436-618b5f5f563a",
+  "prevId": "8dac6690-81b4-49c4-867f-174f4ca25a8b",
+  "fields": {
+    "worktreeGroupCollapsed": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "af55fec9d6ea7ba3",
+      "default": {}
+    }
+  }
+}

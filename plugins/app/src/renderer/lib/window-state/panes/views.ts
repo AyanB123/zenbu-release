@@ -30,8 +30,16 @@ export function openSettingsInRoot(
   windowId: string,
   args: Record<string, unknown> = {},
 ): void {
-  const ws = root.app.windowStates[windowId]
-  if (!ws) return
+  // `useActiveView()` falls back to `{ kind: "onboarding" }` when
+  // `windowStates[windowId]` is missing, so the UI happily renders
+  // the onboarding screen on a fresh launch even though the DB
+  // entry has never been created. If we bail here on a missing
+  // entry the rail's gear button silently no-ops on first launch
+  // (no logs, no DB write, no re-render) until something else —
+  // selecting a workspace, hitting the `+` tile — materializes
+  // the window state via `ensureWindowState`. Materialize it
+  // ourselves so the very first click works.
+  const ws = ensureWindowState(root, windowId)
   if (ws.activeView.kind !== "workspace") {
     ws.activeView = { kind: "view", viewType: "settings", args }
     return

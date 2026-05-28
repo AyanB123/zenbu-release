@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Bottom-panel plugin: renders the active scope's terminals as a component view (rendering: 'component'). The PTY lifecycle + DB state stay in the host's TerminalService; this plugin just contributes the UI.",
   "exports": {
     ".": "./zenbu.plugin.ts"
   },

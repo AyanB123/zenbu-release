@@ -19,13 +19,16 @@ import { definePlugin } from "@zenbujs/core/config";
  *     the current mode to a renderer-side singleton (this plugin's
  *     `./store` entry). The status-bar item reads from the store.
  *
- *  3. **Status-bar item** — around-advice on the host's `AppStatusBar`
- *     injects a `VimModeStatusItem` on the right side, toggle-able
- *     by clicking. Reads the store + the db setting directly; no host
- *     surface area for it to depend on.
+ *  3. **Status-bar item** — the same content script also registers
+ *     `VimModeStatusItem` under `meta.kind = "pi-footer.item"` with
+ *     `position: "right"`. The `pi-footer` plugin's container picks
+ *     it up via the function registry and renders it on the right
+ *     side of the chat-pane footer; clicking toggles vim mode.
+ *     Reads the store + the db setting directly; no host surface
+ *     area for it to depend on.
  *
  * Depends on `app` for typed access to the host's `db.app.settings`
- * (for the vim-mode toggle) and the `AppStatusBar` advice target.
+ * (for the vim-mode toggle).
  */
 export default definePlugin({
   name: "cmVim",

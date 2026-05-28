@@ -28,9 +28,6 @@ const lucide = (body: string) => `${SVG_PREFIX}${body}${SVG_SUFFIX}`;
 // lucide: message-square
 const MESSAGE_SQUARE =
   '<path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"/>';
-// lucide: folders
-const FOLDERS =
-  '<path d="M20 17a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3.9a2 2 0 0 1-1.69-.9l-.81-1.2a2 2 0 0 0-1.67-.9H8a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2Z"/><path d="M2 8v11a2 2 0 0 0 2 2h14"/>';
 // lucide: folder
 const FOLDER =
   '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>';
@@ -96,11 +93,6 @@ export default definePlugin({
     "pull-requests": lucide(GIT_PULL_REQUEST),
     plan: lucide(LIST_CHECKS),
     settings: lucide(SETTINGS),
-    // Left-sidebar tab icon for the `extra-dirs-sidebar` plugin.
-    // Icons live with the host (rather than inside the plugin's
-    // `definePlugin`) so the host can keep the visual set of tab
-    // glyphs consistent.
-    "extra-dirs": lucide(FOLDERS),
     // Left-sidebar tab icon for the `agent-sidebar` plugin. lucide
     // message-square — matches the chat-bubble glyph used
     // elsewhere in the app for "a chat".

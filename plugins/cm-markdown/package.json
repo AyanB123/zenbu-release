@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "CodeMirror Obsidian-style inline live-preview for bold, italic, strikethrough, inline code, and headings. Contributes a `cm.composer-extension` to every composer.",
   "exports": {
     ".": "./zenbu.plugin.ts",
     "./extension": "./src/extension/index.ts"

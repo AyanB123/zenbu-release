@@ -27,7 +27,7 @@ export type ToolMessage = WithKey & {
   title: string
   subtitle?: string
   kind: string
-  status: "pending" | "running" | "completed" | "failed"
+  status: "pending" | "running" | "completed" | "failed" | "interrupted"
   contentItems?: ToolCallContentItem[]
   toolName?: string
   rawInput?: unknown

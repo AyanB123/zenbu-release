@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Cmd+P recent-agents palette. Replaces the host's AgentsPalette with a VSCode-style 'jump to recent agent' picker built on @zenbu/ui/palette.",
   "exports": {
     ".": "./zenbu.plugin.ts"
   },

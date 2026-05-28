@@ -1,10 +1,16 @@
 import fs from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { Service } from "@zenbujs/core/runtime"
 import { RpcService, ViewRegistryService } from "@zenbujs/core/services"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
+
+// Where the plugin-installer / create-plugin drop plugins. A dir
+// here is "available"; whether it's also installed (i.e. in
+// `root.app.plugins`) is decided client-side.
+const PLUGINS_HOME = path.join(os.homedir(), ".zenbu", "plugins")
 
 const SIDEBAR_VIEW_SOURCE = path.resolve(
   here,
@@ -55,9 +61,8 @@ export class MarketplaceService extends Service.create({
         meta: {
           kind: "left-sidebar",
           label: "Marketplace",
-          // Sits after the agent (10) and extra-dirs (20) tabs.
-          // Multiples of 10 leave room for other plugins to slot
-          // between.
+          // Sits after the agent (10) tab. Multiples of 10 leave room
+          // for other plugins to slot between.
           order: 30,
           // Auto-registered shortcut for opening this tab (see
           // SidebarViewShortcutsService). Matches VS Code's
@@ -106,14 +111,57 @@ export class MarketplaceService extends Service.create({
    * inside (next to the sidebar), the user's existing work
    * remains visible to its right.
    */
-  async openDetailInPane(args: { pluginId: string }): Promise<{ ok: true }> {
+  async openDetailInPane(args: {
+    pluginId: string
+    // Set by "Not installed" rows so the detail view can read
+    // README straight from disk (the plugin isn't in
+    // `root.app.plugins`).
+    directory?: string
+  }): Promise<{ ok: true }> {
     this.ctx.rpc.emit.app.openViewInActivePane({
       viewType: DETAIL_VIEW_TYPE,
       source: "marketplace",
-      args: { pluginId: args.pluginId },
+      args: { pluginId: args.pluginId, directory: args.directory },
       placement: "left",
     })
     return { ok: true }
+  }
+
+  /**
+   * List plugin directories under `~/.zenbu/plugins` that have a
+   * `zenbu.plugin.{ts,js}` manifest. Used by the sidebar's
+   * "Not installed" section. Missing plugins-home is treated as
+   * an empty list (first-run).
+   */
+  async listAvailable(): Promise<{
+    plugins: Array<{ name: string; dir: string }>
+  }> {
+    let entries: import("node:fs").Dirent[]
+    try {
+      entries = await fs.readdir(PLUGINS_HOME, { withFileTypes: true })
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code === "ENOENT" || code === "ENOTDIR") {
+        return { plugins: [] }
+      }
+      throw err
+    }
+
+    const out: Array<{ name: string; dir: string }> = []
+    await Promise.all(
+      entries.map(async ent => {
+        if (!ent.isDirectory()) return
+        if (ent.name.startsWith(".")) return
+        const dir = path.join(PLUGINS_HOME, ent.name)
+        const hasManifest =
+          (await exists(path.join(dir, "zenbu.plugin.ts"))) ||
+          (await exists(path.join(dir, "zenbu.plugin.js")))
+        if (!hasManifest) return
+        out.push({ name: ent.name, dir })
+      }),
+    )
+    out.sort((a, b) => a.name.localeCompare(b.name))
+    return { plugins: out }
   }
 
   /**
@@ -175,6 +223,15 @@ export class MarketplaceService extends Service.create({
       }
     }
     return { readme, pkg }
+  }
+}
+
+async function exists(filePath: string): Promise<boolean> {
+  try {
+    await fs.stat(filePath)
+    return true
+  } catch {
+    return false
   }
 }
 

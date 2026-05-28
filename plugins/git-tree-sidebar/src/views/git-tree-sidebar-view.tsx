@@ -1,14 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
-import {
-  useDb,
-  useRpc,
-  type ViewComponentProps,
-} from "@zenbujs/core/react";
+import { useDb, useRpc, type ViewComponentProps } from "@zenbujs/core/react";
 import { FileTree, useFileTree } from "@pierre/trees/react";
-import type {
-  GitStatusEntry,
-  GitStatus as TreeGitStatus,
-} from "@pierre/trees";
+import type { GitStatusEntry, GitStatus as TreeGitStatus } from "@pierre/trees";
 
 const TREE_STYLE: React.CSSProperties = {
   "--trees-bg-override": "var(--background)",
@@ -118,9 +111,7 @@ function SidebarTreeForScope({
   useEffect(() => {
     void rpc.gitTreeSidebar.gitStatus
       .refresh({ scopeId })
-      .catch((err) =>
-        console.error("[git-tree-sidebar] refresh failed:", err),
-      );
+      .catch((err) => console.error("[git-tree-sidebar] refresh failed:", err));
   }, [rpc, scopeId]);
 
   if (!status) {
@@ -137,7 +128,7 @@ function SidebarTreeForScope({
     return <Placeholder>Not a git repository.</Placeholder>;
   }
   if (status.files.length === 0) {
-    return <Placeholder>No changes on this repo.</Placeholder>;
+    return <Placeholder>No changes on this branch.</Placeholder>;
   }
 
   return (

@@ -6,7 +6,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react"
-import { XIcon } from "lucide-react"
+import { BanIcon, XIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { collapseHomeDir, useHomeDir } from "@/lib/home-dir"
 import { UserMessageImage } from "./user-message-image"
@@ -70,6 +70,10 @@ const SHIMMER = "text-shimmer"
  * normal "completed" state (past-tense verb, no shimmer) so the
  * failure reads as "this finished, but unhappily" rather than "this
  * is still running".
+ *
+ * `interrupted` (user-requested stop mid-run) gets a separate
+ * indicator — a muted "canceled" suffix — not the X, because the
+ * tool didn't fail, the user stopped it. See `CanceledIndicator`.
  */
 function FailedIndicator({ status }: { status: ToolCardProps["status"] }) {
   if (status !== "failed") return null
@@ -84,9 +88,73 @@ function FailedIndicator({ status }: { status: ToolCardProps["status"] }) {
   )
 }
 
-/** Past-tense verb when the tool is done, regardless of success/failure. */
+/**
+ * Trailing muted ban glyph (⊘) shown after a tool card whose
+ * status is `interrupted` (the materializer flips running/pending
+ * tools to `interrupted` on a `turn_interrupted` event or an
+ * aborted `message_end`). Pairs with the base-form verb each card
+ * picks via `verbFor(...)` so the row reads e.g. "Create File
+ * foo.ts +1 ⊘" instead of "Creating File foo.ts +1".
+ *
+ * Why a ban glyph (not an X, not text): the red `XIcon` already
+ * means "this tool errored" — reusing it for a user-cancel would
+ * conflate two very different signals. The lucide `BanIcon` is
+ * the conventional "stopped / canceled" affordance (same hue
+ * family as `text-muted-foreground` so it sits visually quieter
+ * than the failure X, matching the underlying intent: nothing
+ * broke, the user just hit stop).
+ */
+function CanceledIndicator({ status }: { status: ToolCardProps["status"] }) {
+  if (status !== "interrupted") return null
+  return (
+    <BanIcon
+      className="shrink-0 text-muted-foreground"
+      width={12}
+      height={12}
+      strokeWidth={2}
+      aria-label="canceled"
+    />
+  )
+}
+
+/** True once the tool has reached a terminal state (success,
+ * failure, *or* user-interrupt). Drives `Verb`'s no-shimmer
+ * rendering and gates each card's loading-only logic. */
 function isDone(status: ToolCardProps["status"]) {
-  return status === "completed" || status === "failed"
+  return (
+    status === "completed" ||
+    status === "failed" ||
+    status === "interrupted"
+  )
+}
+
+/** True only for cards interrupted by the user mid-run. Pulled
+ * out so cards can switch their verb to the base form ("Create
+ * File" rather than "Creating File" or "Created File") — the
+ * progressive form lies (we didn't finish) and the past-tense
+ * form also lies (it didn't actually happen). */
+function isInterrupted(status: ToolCardProps["status"]) {
+  return status === "interrupted"
+}
+
+/**
+ * Pick the right verb form for a card given its current status.
+ * Centralised so every card (Write, Edit, Bash, Task, Read) uses
+ * the same three-way mapping:
+ *   - loading      → progressive ("Creating File", "Editing", "Reading")
+ *   - interrupted  → base ("Create File", "Edit", "Read")
+ *   - done         → past tense ("Created File", "Edited", "Read")
+ * The trailing `CanceledIndicator` carries the "canceled" label
+ * so the verb itself stays a verb — the row reads like normal
+ * English: "Create File foo.ts +1 canceled".
+ */
+function verbFor(
+  status: ToolCardProps["status"],
+  forms: { loading: string; interrupted: string; done: string },
+): string {
+  if (isInterrupted(status)) return forms.interrupted
+  if (isDone(status)) return forms.done
+  return forms.loading
 }
 
 type ToolCardProps = {
@@ -98,7 +166,7 @@ type ToolCardProps = {
   title: string
   subtitle?: string
   kind: string
-  status: "pending" | "running" | "completed" | "failed"
+  status: "pending" | "running" | "completed" | "failed" | "interrupted"
   contentItems?: ToolCallContentItem[]
   rawInput?: unknown
   rawOutput?: unknown
@@ -226,15 +294,9 @@ function ToolLine({
   tooltip?: string
 }) {
   const interactive = !!onClick
-  // Plain `<button>` (not the ghost `<Button>` variant) on purpose:
-  // the ghost variant paints `hover:bg-accent` across the entire
-  // row, which read as a heavy fill behind text like "Created File
-  // foo.ts" — way too noisy for a chat surface where most rows
-  // aren't clickable. Here we want a *subtle* hover affordance:
-  // cursor pointer + a slight foreground brightening on the verb
-  // text. The file name itself already pops because it's
-  // `text-foreground`, so the row gains a clear "this is a link"
-  // feel without any background slab.
+  // Hover paints a soft `bg-accent` chip hugged to the text via
+  // `-mx-1.5 px-1.5` so layout doesn't shift. No `cursor-pointer`
+  // — desktop convention; the background change is the affordance.
   const Tag = interactive ? "button" : "div"
   return (
     <Tag
@@ -242,13 +304,10 @@ function ToolLine({
       onClick={onClick}
       aria-label={tooltip}
       className={cn(
-        "group/tool flex w-full min-w-0 items-center gap-1.5 bg-transparent px-0 py-0.5 text-left text-sm font-normal",
-        // Desktop app convention: no `cursor-pointer` here. The
-        // affordance is just an underline on the filename on
-        // hover, scoped via the `group/tool` + `group-hover/tool`
-        // pair so the row hover only underlines the filename
-        // child (marked with `data-tool-link` for self-doc).
-        interactive ? "focus-visible:outline-none" : "",
+        "group/tool flex w-full min-w-0 items-center gap-1.5 bg-transparent py-0.5 text-left text-sm font-normal",
+        interactive
+          ? "-mx-1.5 rounded-md px-1.5 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:bg-accent"
+          : "px-0",
       )}
     >
       {children}
@@ -303,7 +362,9 @@ function EditCard({
   // subsequent clicks REPLACE rather than stack). Disabled while
   // we don't yet have the resolved file path / worktree (very early
   // streaming) or when the chat has no scope.
-  const canOpen = !!(onOpenDiff && editPath && editDirectory)
+  // Gated on `!loading` so we don't race the writer while pi is
+  // still streaming args.
+  const canOpen = !!(onOpenDiff && editPath && editDirectory) && !loading
   const handleClick = canOpen
     ? () => onOpenDiff!({ directory: editDirectory!, path: editPath! })
     : undefined
@@ -314,19 +375,14 @@ function EditCard({
       showChevron={false}
       tooltip={canOpen ? "Open diff in a split" : undefined}
     >
-      <Verb loading={loading}>{isDone(status) ? "Edited" : "Editing"}</Verb>
-      {/* Filename is the only thing that gains the hover
-          affordance — the row's `group/tool` parent (set by
-          ToolLine) drives `group-hover/tool:underline`, scoped
-          here so the underline doesn't run the full width of the
-          row. `data-tool-link` is self-doc (no styling hook). */}
-      <span
-        data-tool-link
-        className={cn(
-          "min-w-0 truncate text-foreground decoration-foreground/40 underline-offset-2",
-          canOpen && "group-hover/tool:underline",
-        )}
-      >
+      <Verb loading={loading}>
+        {verbFor(status, {
+          loading: "Editing",
+          interrupted: "Edit",
+          done: "Edited",
+        })}
+      </Verb>
+      <span className="min-w-0 truncate text-foreground">
         {label}
       </span>
       {(added > 0 || removed > 0) && (
@@ -336,6 +392,7 @@ function EditCard({
         </span>
       )}
       <FailedIndicator status={status} />
+      <CanceledIndicator status={status} />
     </ToolLine>
   )
 }
@@ -361,7 +418,8 @@ function WriteCard({
   const loading = isLoading(status)
   // Same click-to-open-diff handler as EditCard; see the comment
   // there for the routing rationale.
-  const canOpen = !!(onOpenDiff && editPath && editDirectory)
+  // See `EditCard` for the `!loading` gate rationale.
+  const canOpen = !!(onOpenDiff && editPath && editDirectory) && !loading
   const handleClick = canOpen
     ? () => onOpenDiff!({ directory: editDirectory!, path: editPath! })
     : undefined
@@ -373,21 +431,20 @@ function WriteCard({
       tooltip={canOpen ? "Open diff in a split" : undefined}
     >
       <Verb loading={loading}>
-        {isDone(status) ? "Created File" : "Creating File"}
+        {verbFor(status, {
+          loading: "Creating File",
+          interrupted: "Create File",
+          done: "Created File",
+        })}
       </Verb>
-      <span
-        data-tool-link
-        className={cn(
-          "min-w-0 truncate text-foreground decoration-foreground/40 underline-offset-2",
-          canOpen && "group-hover/tool:underline",
-        )}
-      >
+      <span className="min-w-0 truncate text-foreground">
         {fileBasename(filePath)}
       </span>
       {lineCount > 0 && (
         <span className="shrink-0 text-blue-500">+{lineCount}</span>
       )}
       <FailedIndicator status={status} />
+      <CanceledIndicator status={status} />
     </ToolLine>
   )
 }
@@ -543,18 +600,13 @@ function BashCard({
         showChevron={false}
         tooltip={rowClickable ? "Open output in side pane" : undefined}
       >
-        <span
-          className={cn(
-            "min-w-0 truncate",
-            rowClickable &&
-              "decoration-foreground/40 underline-offset-2 group-hover/tool:underline",
-          )}
-        >
+        <span className="min-w-0 truncate">
           <Verb loading={loading}>Bash(</Verb>
           {inner}
           <Verb loading={loading}>)</Verb>
         </span>
         <FailedIndicator status={status} />
+        <CanceledIndicator status={status} />
       </ToolLine>
       {showOutputBlock && (
         // The whole preview is a single clickable target (when
@@ -655,6 +707,7 @@ function TaskCard({
           <Verb loading={loading}>)</Verb>
         </span>
         <FailedIndicator status={status} />
+        <CanceledIndicator status={status} />
       </ToolLine>
       {expanded && detail && <ExpandedBody>{truncateLines(detail, 30)}</ExpandedBody>}
     </div>
@@ -742,6 +795,7 @@ function ReadCard({
           </span>
         )}
         <FailedIndicator status={status} />
+        <CanceledIndicator status={status} />
       </ToolLine>
       {images.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2 pl-[58px]">
@@ -779,6 +833,7 @@ function SearchCard({ toolCallId, title, status }: ToolCardProps) {
         {title}
       </span>
       <FailedIndicator status={status} />
+      <CanceledIndicator status={status} />
     </ToolLine>
   )
 }
@@ -804,6 +859,7 @@ function DefaultCard({ toolCallId, title, status }: ToolCardProps) {
         {title}
       </span>
       <FailedIndicator status={status} />
+      <CanceledIndicator status={status} />
     </ToolLine>
   )
 }

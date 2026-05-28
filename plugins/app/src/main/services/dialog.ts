@@ -58,7 +58,8 @@ export class DialogService extends Service.create({ key: "dialog" }) {
 
   /**
    * Open the given absolute path in the OS file browser. Used by the
-   * extra-dirs sidebar's "Reveal in Finder" row action. We call
+   * context sidebar's "Reveal in Finder" row action on extra
+   * directories. We call
    * `shell.openPath` so a directory is *opened in* the file browser
    * (rather than `showItemInFolder`, which would highlight the dir
    * inside its parent). Returns the empty string on success and

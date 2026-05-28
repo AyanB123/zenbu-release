@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Cmd+; recent-worktrees palette. Lists the active workspace's worktrees by most-recently-opened chat; selecting one jumps to that chat (same code path as clicking it in the agent sidebar).",
   "exports": {
     ".": "./zenbu.plugin.ts"
   },

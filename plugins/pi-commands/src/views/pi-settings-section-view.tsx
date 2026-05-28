@@ -75,11 +75,6 @@ export default function PiSettingsSectionView() {
 
   return (
     <div className="flex flex-col gap-6 pt-3">
-      <div className="rounded-lg border border-border bg-card/40 p-3 text-[12px] text-muted-foreground">
-        These are Pi agent settings from <code>settings.json</code>. They affect
-        new Pi sessions immediately and live sessions after reload where Pi
-        supports it.
-      </div>
       {grouped.map(group => (
         <section key={group.title} className="flex flex-col gap-2">
           <h2 className="text-[13px] font-semibold text-foreground">

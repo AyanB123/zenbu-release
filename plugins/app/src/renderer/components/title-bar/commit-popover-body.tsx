@@ -53,7 +53,7 @@ export function CommitPopoverBody({
       }
       setPreview({
         branch: p.branch,
-        files: p.files,
+        files: p.files as PreviewFile[],
         additions: p.additions,
         deletions: p.deletions,
       })
@@ -190,14 +190,15 @@ function FileRow({ file }: { file: PreviewFile }) {
     <div className="flex items-center gap-2 px-3 py-1 text-[12px]">
       <span
         className={
-          "w-3 shrink-0 text-center font-mono text-[10px] " + label.className
+          "w-3 shrink-0 text-center text-[10px] font-semibold " +
+          label.className
         }
         aria-label={label.title}
       >
         {label.glyph}
       </span>
       <span
-        className="flex-1 truncate font-mono text-[11.5px]"
+        className="flex-1 truncate text-[12px]"
         aria-label={file.path}
       >
         {file.oldPath ? (

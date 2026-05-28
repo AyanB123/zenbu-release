@@ -18,7 +18,6 @@ import { useActiveScopeId } from "@/lib/window-state/active-view"
  * `meta.kind = "left-sidebar"`:
  *
  *  - `"agent"` (chat list)  \u2014 `plugins/agent-sidebar`
- *  - `"extra-dirs"`         \u2014 `plugins/extra-dirs-sidebar`
  *
  * The `LeftSidebarTabBar` derives its tab list from the registry
  * via `useLeftSidebarViews()`, so adding a new tab is purely a

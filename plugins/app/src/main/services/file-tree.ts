@@ -405,15 +405,17 @@ async function walk(
   }
 }
 
-/** Resolve `rel` against `root`, refusing any path that escapes root via
- * `..` or absolute segments. */
+/** Resolve `rel` against `root`. We intentionally do NOT refuse paths
+ * that escape `root` via `..` or absolute segments: tool calls (and
+ * sometimes the user) legitimately point at files outside of the
+ * indexed scope (`~/.zenbu/plugins/...`, sibling repos, etc.) and the
+ * UI should happily open them rather than throwing a `path escapes
+ * root` error mid-click. `path.resolve` already normalizes `..` and
+ * treats an absolute `rel` as an override, which is exactly what we
+ * want here. */
 function safeJoin(root: string, rel: string): string {
   const normalizedRoot = path.resolve(root)
-  const abs = path.resolve(normalizedRoot, rel)
-  if (abs !== normalizedRoot && !abs.startsWith(`${normalizedRoot}${path.sep}`)) {
-    throw new Error(`path escapes root: ${rel}`)
-  }
-  return abs
+  return path.resolve(normalizedRoot, rel)
 }
 
 /** Cheap NUL-byte heuristic. Good enough to keep CodeMirror from being

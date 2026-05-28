@@ -1,0 +1,17 @@
+{
+  "version": "1",
+  "entries": [
+    {
+      "idx": 0,
+      "tag": "migration",
+      "when": 1779929481518,
+      "file": "migration_1779929481518"
+    },
+    {
+      "idx": 1,
+      "tag": "migration",
+      "when": 1779931608568,
+      "file": "migration_1779931608568"
+    }
+  ]
+}

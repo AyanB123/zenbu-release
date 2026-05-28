@@ -99,6 +99,7 @@ const schema = createSchema({
     chatBackground: null,
     vimMode: true,
     defaultSendMode: "followUp",
+    chatDevtools: false,
   }),
 });
 

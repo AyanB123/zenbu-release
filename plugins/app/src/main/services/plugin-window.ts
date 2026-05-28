@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid"
 import { Service } from "@zenbujs/core/runtime"
 import {
+  BaseWindowService,
   DbService,
   WindowService,
 } from "@zenbujs/core/services"
@@ -37,6 +38,11 @@ export class PluginsRootViewService extends Service.create({
     db: DbService,
     window: WindowService,
     repos: ReposService,
+    // Used to peek the parent's main-window bounds before opening
+    // the plugin window, so the new window lands offset from the
+    // parent instead of landing on top of it. Matches the offset
+    // `plugin-dev.runInDev` uses for the dev-test spawn.
+    baseWindow: BaseWindowService,
   },
 }) {
   async openPluginInNewWindow(args: {
@@ -82,12 +88,33 @@ export class PluginsRootViewService extends Service.create({
       }
     })
 
+    // Offset down-and-right from the parent's focused window so
+    // the user sees a new window land instead of "the same window
+    // blanked out". Falls through to Electron's default position
+    // when no parent bounds are available (no main window yet,
+    // headless tests, etc.).
+    const parentBounds = this.ctx.baseWindow.windows
+      .get("main")
+      ?.getBounds()
+    const offset = 48
+    const offsetBaseWindow = parentBounds
+      ? {
+          x: parentBounds.x + offset,
+          y: parentBounds.y + offset,
+          width: parentBounds.width,
+          height: parentBounds.height,
+        }
+      : {}
+
     return this.ctx.window.openView({
       type: "entrypoint",
       windowId: newWindowId,
       query: { skeletonRoute: skeletonRouteForActiveView(activeView) },
       baseWindow: {
+        minWidth: 430,
+        minHeight: 310,
         trafficLightPosition: { x: 14, y: 12 },
+        ...offsetBaseWindow,
       },
       contextMenu: { prepend: buildContextMenuPrepend() },
     })

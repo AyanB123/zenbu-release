@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Settings plugin. Contributes the main 'settings' view (theme / send-mode / accounts / pi / shortcuts) as a rendering: 'component' view, and a workspace-rail gear button that opens it. Owns its own schema for settings-internal state (last-selected tab) and depends on the host app + pi-commands plugins for the actual config it surfaces UI for.",
   "exports": {
     ".": "./zenbu.plugin.ts",
     "./services/settings-registry": "./src/main/services/settings-registry.ts"

@@ -31,10 +31,10 @@ import { useDb, useRpc } from "@zenbujs/core/react";
  *    that absolute path, and compute the relative remainder. That
  *    matches the contract `FileTreeService.readFile` expects
  *    (`safeJoin(directory, path)`).
- *  - If no scope matches, we fall back to the active window's
- *    selected scope (best-effort), and ultimately bail out without
- *    firing the click so we never trigger a noisy
- *    `path escapes root` error.
+ *  - If no scope matches, we anchor the absolute path at `/` so the
+ *    file still opens (paths outside any indexed scope — e.g.
+ *    `~/.zenbu/plugins/...` — are perfectly valid click targets;
+ *    the host's `safeJoin` no longer rejects them).
  *
  * Click suppression caveats: `onClickCapture` runs before nested
  * `onClick` handlers, but React still dispatches to them afterwards
@@ -79,14 +79,16 @@ function readToolFilePath(rawInput: unknown): string | null {
   const candidate = input.file_path ?? input.path ?? input.filePath;
   if (typeof candidate !== "string" || candidate.length === 0) return null;
   // Strip any trailing `(L1-L2)` range tag the host appends to read
-  // titles — only the actual path is meaningful to `safeJoin`.
+  // titles — only the actual path is meaningful when we hand it off
+  // to the host's file reader.
   return candidate.replace(/\s*\([\d\s\-–,]+\)\s*$/, "");
 }
 
 /** Choose the scope whose `directory` is the longest prefix of
- * `absPath`. Falls back to the active window's selected scope so
- * relative-looking paths still have a reasonable home, and finally
- * to `null` when we have nothing to anchor on. */
+ * `absPath`. Falls back to the active window's selected scope for
+ * relative paths, and — for absolute paths with no matching scope —
+ * anchors at `/` so the file still opens. Returns `null` only when
+ * we have literally nothing to point at. */
 function resolveOpen(
   absPath: string,
   scopes: { id: string; directory: string }[],
@@ -105,10 +107,14 @@ function resolveOpen(
       }
     }
     if (best && best.path.length > 0) return best;
-    return null;
+    // No scope contains this file — that's fine, the host can still
+    // read it. Anchor at root so the (directory, path) source identity
+    // is stable across clicks on the same file.
+    return { directory: "/", path: absPath.replace(/^\/+/, "") };
   }
   // Already-relative path: anchor on the active scope if we have
-  // one. The host's `safeJoin` will still reject ".." escapes.
+  // one. `path.resolve` inside the host's `safeJoin` will normalize
+  // any `..` segments without rejecting them.
   if (activeScopeDirectory) {
     return { directory: activeScopeDirectory, path: absPath };
   }

@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Open-in plugin: contributes the title-bar split button that opens the active scope's directory in the user's preferred macOS app, as an isolated component view.",
   "exports": {
     ".": "./zenbu.plugin.ts"
   },

@@ -105,6 +105,10 @@ function Header({ state }: { state: ToolCallOutputState }) {
 
 function StatusPill({ status }: { status: ToolCallOutputState["status"] }) {
   if (status == null) return null
+  // `interrupted` reads as the user-cancel state (matches the
+  // inline tool card's trailing "canceled" label) — distinct from
+  // `failed` (red X for actual tool errors) and from `completed`
+  // (which would lie since the tool didn't actually finish).
   const label =
     status === "running"
       ? "running"
@@ -112,7 +116,9 @@ function StatusPill({ status }: { status: ToolCallOutputState["status"] }) {
         ? "pending"
         : status === "failed"
           ? "failed"
-          : "completed"
+          : status === "interrupted"
+            ? "canceled"
+            : "completed"
   const tone =
     status === "failed"
       ? "bg-red-500/15 text-red-600 dark:text-red-300"

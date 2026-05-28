@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Play plugin: contributes the title-bar Run/Stop/Setup split-pill (with logs + config popover) as an isolated component view. Routes through the host's existing PlayService RPCs.",
   "exports": {
     ".": "./zenbu.plugin.ts"
   },

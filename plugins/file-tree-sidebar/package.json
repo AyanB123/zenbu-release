@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Right-sidebar plugin: the active scope's file tree as a component view (rendering: 'component'). Reads `root.app.fileTreeIndexes` from the host replica; clicking a file routes through `rpc.app.fileTree.openFile`.",
   "exports": {
     ".": "./zenbu.plugin.ts"
   },

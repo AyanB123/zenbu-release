@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
+import { ChevronDownIcon } from "lucide-react"
 import { Streamdown } from "streamdown"
 import {
   useDb,
@@ -7,12 +8,22 @@ import {
   useViewArgs,
 } from "@zenbujs/core/react"
 import { Button } from "@zenbu/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@zenbu/ui/dropdown-menu"
 import { cn } from "@zenbu/ui/utils"
 import { PLUGINS } from "./mock-data"
 import type { MarketplacePlugin } from "./mock-data"
 
 export type PluginDetailArgs = {
   pluginId?: string
+  // Set by "Not installed" sidebar rows. Lets the view read
+  // README from disk when the plugin isn't in `root.app.plugins`.
+  // Ignored when `installedMatch` resolves.
+  directory?: string
 }
 
 type InstalledPlugin = {
@@ -56,7 +67,7 @@ type PluginIconRecord = {
  * (icon + identity + actions) over a scrollable Markdown body.
  */
 export default function PluginDetailView() {
-  const { pluginId } = useViewArgs<PluginDetailArgs>() ?? {}
+  const { pluginId, directory } = useViewArgs<PluginDetailArgs>() ?? {}
 
   const installed =
     (useDb(root => root.app.plugins) as InstalledPlugin[] | undefined) ?? []
@@ -95,6 +106,17 @@ export default function PluginDetailView() {
 
   if (marketplaceMatch) {
     return <MarketplaceDetail plugin={marketplaceMatch} />
+  }
+
+  // Not-installed path: render the same README-driven body as
+  // the installed case using the directory hint from the sidebar.
+  if (directory) {
+    return (
+      <InstalledDetail
+        plugin={{ name: pluginId, dir: directory, kind: "plugin", tag: null }}
+        icon={null}
+      />
+    )
   }
 
   return (
@@ -183,14 +205,10 @@ function InstalledDetail({
           tagline={pkg?.description ?? null}
           action={
             isPiExtension ? null : (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={onOpenWorkspace}
-                className="h-8 bg-transparent font-medium"
-              >
-                Open in Workspace
-              </Button>
+              <OpenInWorkspaceButton
+                pluginDir={plugin.dir}
+                onOpen={onOpenWorkspace}
+              />
             )
           }
         />
@@ -199,11 +217,7 @@ function InstalledDetail({
       {isPiExtension ? (
         <PiExtensionBody dir={plugin.dir} />
       ) : (
-        <ReadmeBody
-          readme={readme}
-          error={readmeError}
-          fallbackPath={plugin.dir}
-        />
+        <ReadmeBody readme={readme} error={readmeError} />
       )}
     </DetailLayout>
   )
@@ -220,15 +234,12 @@ type PackageMeta = {
 
 function PiExtensionBody({ dir }: { dir: string }) {
   return (
-    <div className="flex flex-col gap-3 text-[13px] text-foreground/90">
-      <p>This is a Pi extension, not a regular plugin.</p>
-      <p className="text-muted-foreground">
-        Loaded from{" "}
-        <code className="rounded bg-muted px-1 py-0.5 font-mono text-[12px]">
-          {dir}
-        </code>
-        .
-      </p>
+    <div className="text-[13px] text-muted-foreground">
+      Loaded from{" "}
+      <code className="rounded bg-muted px-1 py-0.5 font-mono text-[12px]">
+        {dir}
+      </code>
+      .
     </div>
   )
 }
@@ -236,11 +247,9 @@ function PiExtensionBody({ dir }: { dir: string }) {
 function ReadmeBody({
   readme,
   error,
-  fallbackPath,
 }: {
   readme: string | null
   error: string | null
-  fallbackPath: string
 }) {
   if (error) {
     return (
@@ -258,19 +267,80 @@ function ReadmeBody({
   }
   if (readme.trim().length === 0) {
     return (
-      <div className="flex flex-col gap-2 text-[12.5px] text-muted-foreground">
-        <p>No README.md in this plugin.</p>
-        <p>
-          Plugin lives at{" "}
-          <code className="rounded bg-muted px-1 py-0.5 font-mono text-[12px]">
-            {fallbackPath}
-          </code>
-          .
-        </p>
+      <div className="text-[12.5px] text-muted-foreground">
+        No README.md in this plugin.
       </div>
     )
   }
   return <MarkdownBody source={readme} />
+}
+
+// ---------------------------------------------------------------------------
+// Header action: "Open in Workspace" split button.
+//
+// Mirrors the shape of the title-bar's `open-in` split:
+//   [  Open in Workspace  | ▾  ]
+// Primary click opens the per-plugin workspace window; the chevron
+// pops a small menu with a Copy path action so the user can grab
+// the plugin source path without having to dig through the
+// file-tree sidebar.
+
+function OpenInWorkspaceButton({
+  pluginDir,
+  onOpen,
+}: {
+  pluginDir: string
+  onOpen: () => void
+}) {
+  const rpc = useRpc()
+  const [open, setOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const onCopyPath = () => {
+    try {
+      rpc.core.window.copyToClipboard(pluginDir)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1200)
+    } catch (err) {
+      console.error("[plugin-detail] copyToClipboard failed:", err)
+    }
+    setOpen(false)
+  }
+
+  return (
+    <div className="inline-flex h-8 items-stretch overflow-hidden rounded-md border border-border bg-background/40 transition-colors hover:bg-background/70">
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label="Open in Workspace"
+        className="inline-flex items-center px-3 text-[12px] font-medium leading-none text-foreground transition-colors hover:bg-background/80"
+      >
+        Open in Workspace
+      </button>
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label="More Open in Workspace actions"
+            className={cn(
+              "inline-flex items-center justify-center border-l border-border px-2 text-muted-foreground transition-colors",
+              "hover:bg-background/80 hover:text-foreground",
+              "data-[state=open]:bg-background/80 data-[state=open]:text-foreground",
+            )}
+          >
+            <ChevronDownIcon className="size-3.5" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-[180px] p-1">
+          <DropdownMenuItem onSelect={onCopyPath} className="gap-2">
+            <span className="flex-1 text-[12px]">
+              {copied ? "Copied!" : "Copy path"}
+            </span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
 }
 
 // ---------------------------------------------------------------------------

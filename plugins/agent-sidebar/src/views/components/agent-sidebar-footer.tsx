@@ -1,5 +1,4 @@
 import { SidebarFooter } from "@/components/layout/sidebar-footer"
-import { ChatSortMenu } from "./chat-sort-menu"
 import { WorktreeShelfMenu } from "./worktree-shelf-menu"
 
 /**
@@ -11,17 +10,15 @@ import { WorktreeShelfMenu } from "./worktree-shelf-menu"
  * footer chrome.
  *
  * Slots:
- *   - `ChatSortMenu`: choose the sort key for chat rows.
- *   - `WorktreeShelfMenu`: open the archived worktrees menu.
- *     Renders nothing until there's at least one archived
- *     worktree in the active workspace, so the footer stays a
- *     single-icon row on a fresh install.
+ *   - `WorktreeShelfMenu`: open the archived items menu (work
+ *     trees + chats). Renders nothing until there's at least one
+ *     archived item in the active workspace, so the footer stays
+ *     empty on a fresh install.
  */
 export function AgentSidebarFooter() {
   return (
     <SidebarFooter>
       <div className="flex w-full items-center justify-start gap-1">
-        <ChatSortMenu />
         <WorktreeShelfMenu />
       </div>
     </SidebarFooter>

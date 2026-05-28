@@ -85,25 +85,17 @@ export function useGlobalViewLabel(): string {
 /** Worktree-group listing for the active workspace. Groups follow
  * the rule that a worktree only appears when it has at least one
  * non-archived chat. Inside each group, chats are deduplicated by
- * session and sorted by the user's chosen sort key. */
+ * session and sorted by creation time (oldest first surfaces at
+ * the top after the descending sort below). */
 export function useSidebarGroups(): SidebarGroup[] {
   const workspaceId = useActiveWorkspaceId()
-  const sidebarChatSort = useDb(root => root.agentSidebar.chatSort)
   const chatsById = useDb(root => root.app.chats)
   const scopesById = useDb(root => root.app.scopes)
   const sessionsById = useDb(root => root.app.sessions)
-  const sessionMetaById = useDb(root => root.app.sessionMeta)
 
   return useMemo<SidebarGroup[]>(() => {
     if (!workspaceId) return []
-    const sortKey = (c: Chat) => {
-      if (sidebarChatSort === "created") return c.createdAt
-      if (c.session.kind !== "ready") return c.createdAt
-      return (
-        sessionMetaById[c.session.sessionId]?.lastMessageSentTime ??
-        c.createdAt
-      )
-    }
+    const sortKey = (c: Chat) => c.createdAt
     const wsScopes = Object.values(scopesById).filter(
       s => s.workspaceId === workspaceId && !s.archived,
     )
@@ -160,8 +152,6 @@ export function useSidebarGroups(): SidebarGroup[] {
     chatsById,
     scopesById,
     sessionsById,
-    sessionMetaById,
-    sidebarChatSort,
   ])
 }
 

@@ -71,6 +71,8 @@ export class ChatWindowService extends Service.create({
       baseWindow: {
         width: 820,
         height: 820,
+        minWidth: 350,
+        minHeight: 310,
         trafficLightPosition: { x: 14, y: 12 },
       },
       contextMenu: { prepend: buildContextMenuPrepend() },

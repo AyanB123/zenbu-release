@@ -256,8 +256,28 @@ export function UserMessage({
   const showingPicker =
     stage.kind === "editChoosing" || stage.kind === "revertChoosing"
   const busy = stage.kind === "busy"
-  const clipped =
-    !expanded && !editing && !showingPicker && !busy && overflows
+  // Apply the collapsed-view max-height *eagerly*, without waiting for
+  // the resize-observer to confirm there's overflow. The Composer
+  // mounts CodeMirror inside a `useEffect`, which fires after this
+  // component's `useLayoutEffect` runs — so our initial measurement
+  // always sees an empty host and reports `overflows=false`. The
+  // bubble then paints full-size, CM inserts its content, the RO
+  // fires, we flip `overflows` true, and the bubble *snaps* short on
+  // the next paint. Visible flicker on every long paste.
+  //
+  // RO callbacks do fire before the next paint inside their own
+  // frame, but only after CM has already triggered a layout pass
+  // we've already painted in response to. Reading layout
+  // "synchronously" can't help us here — the layout we'd be reading
+  // is the *empty* one from before CM mounted.
+  //
+  // So: clip preemptively. Short messages are smaller than the cap
+  // anyway (max-height is a no-op), long messages start clipped on
+  // the first paint. The RO is still wired up so `overflows` becomes
+  // accurate and drives the chevron + footer affordances.
+  const collapsedView = !expanded && !editing && !showingPicker && !busy
+  const clipped = collapsedView
+  const showExpandChevron = collapsedView && overflows
   const showCollapseFooter =
     expanded && !editing && !showingPicker && !busy && overflows
 
@@ -347,7 +367,7 @@ export function UserMessage({
               />
             ) : null}
           </div>
-          {clipped ? (
+          {showExpandChevron ? (
             <button
               type="button"
               onClick={e => {

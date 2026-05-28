@@ -1,8 +1,8 @@
-import { spawn } from "node:child_process"
 import fs from "node:fs"
 import fsp from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { spawnWithInstallHangGuard } from "@zenbujs/core/install-guard"
 import { Service } from "@zenbujs/core/runtime"
 import { RpcService } from "@zenbujs/core/services"
 
@@ -159,30 +159,27 @@ export class PluginInstallerService extends Service.create({
     this.ctx.rpc.emit.pluginInstaller.installProgress({ phase, message })
   }
 
-  private run(
+  /**
+   * Spawn a child command and surface every output line as an
+   * `installProgress` event. For `pnpm install` we route through
+   * `spawnWithInstallHangGuard` from the framework, which transparently
+   * detects + survives the post-"Done" pnpm hang and appends an
+   * incident to `~/.zenbu/.internal/install-incidents.log`.
+   */
+  private async run(
     cmd: string,
     argv: string[],
     opts: { cwd?: string } = {},
   ): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const child = spawn(cmd, argv, {
-        cwd: opts.cwd,
-        stdio: ["ignore", "pipe", "pipe"],
-        env: process.env,
-      })
-      const forward = (buf: Buffer) => {
-        for (const line of buf.toString("utf8").split(/\r?\n/)) {
-          if (line.trim().length === 0) continue
-          this.emit("log", line)
-        }
-      }
-      child.stdout?.on("data", forward)
-      child.stderr?.on("data", forward)
-      child.on("error", reject)
-      child.on("exit", (code) => {
-        if (code === 0) resolve()
-        else reject(new Error(`${cmd} ${argv.join(" ")} exited with ${code}.`))
-      })
+    const isPnpm = /(^|[\\/])pnpm(\W|$)/i.test(cmd)
+    await spawnWithInstallHangGuard({
+      bin: cmd,
+      args: argv,
+      cwd: opts.cwd ?? process.cwd(),
+      env: process.env,
+      pmType: isPnpm ? "pnpm" : undefined,
+      label: `${cmd} ${argv.join(" ")}`,
+      onLine: (line) => this.emit("log", line),
     })
   }
 }

@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Left-sidebar plugin: contributes the 'Agents' chat list as a rendering: 'component' view, wired up via meta.kind = 'left-sidebar' so the host's LeftSidebarTabBar surfaces it as a tab.",
   "exports": {
     ".": "./zenbu.plugin.ts"
   },

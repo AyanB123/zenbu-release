@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Cmd+L recent-workspaces palette. Maintains a per-workspace lastVisitedAt record in its own schema and lets the user jump to the previously-active workspace with one keystroke.",
   "exports": {
     ".": "./zenbu.plugin.ts"
   },

@@ -1,0 +1,24 @@
+{
+  "id": "b131ca45-b3e7-4ace-b13a-f8b4137f91f0",
+  "prevId": "7085be89-51b3-4b16-810c-954ab4f80c7b",
+  "fields": {
+    "runs": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "2a748629234fa572",
+      "default": {}
+    },
+    "latestRunIdByPluginPath": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "6e35b6ffccad3897",
+      "default": {}
+    },
+    "devMode": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "8c885966023f36f6",
+      "default": false
+    }
+  }
+}

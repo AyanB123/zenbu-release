@@ -1,10 +1,14 @@
-import { useMemo } from "react";
-import { useDb, type ViewComponentProps } from "@zenbujs/core/react";
+import { useCallback, useMemo } from "react";
+import {
+  useDb,
+  useDbClient,
+  useRpc,
+  type ViewComponentProps,
+} from "@zenbujs/core/react";
 import { HoverTip } from "@zenbu/ui/hover-tip";
 
 /**
- * Component-mode view for the right-sidebar context-window
- * visualizer.
+ * Component-mode view for the right-sidebar context tab.
  *
  * Resolves the "active session" off the host's DB:
  *  - prefer the chat focused in this window's active pane;
@@ -12,9 +16,19 @@ import { HoverTip } from "@zenbu/ui/hover-tip";
  *    window;
  *  - last-ditch, walk every other window the same way.
  *
- * Reads `session.stats` + `app.models` straight off the replica,
- * so first paint is synchronous and updates as the agent
- * streams.
+ * Renders, top-to-bottom:
+ *   - session header (title, model, context-window totals)
+ *   - context-window cell grid
+ *   - extra-directories list (formerly the `extra-dirs-sidebar`
+ *     plugin) — each row shows the directory path with reveal /
+ *     copy / remove affordances + an "Add dir to context" button
+ *   - session footer (cumulative tokens, cost, leaves, etc.)
+ *
+ * The extra-dirs section is shown for the active chat's scope:
+ * mutations go straight through `useDbClient`, identical to how
+ * the standalone sidebar used to do it. The `/add-dir` slash
+ * command (registered by this plugin's service) drives the same
+ * flow without the user having to open the sidebar.
  *
  * Because this is a component view we share the host's React
  * tree, theme, and CSS scope — no `useThemeSync()` shim needed.
@@ -30,9 +44,9 @@ export default function ContextSidebarView({
   args,
 }: ViewComponentProps<ContextSidebarArgs>) {
   const windowId = args?.windowId ?? null;
-  const sessionId = useActiveSessionId(windowId);
+  const active = useActiveChat(windowId);
 
-  if (!sessionId) {
+  if (!active.sessionId) {
     return (
       <Placeholder>
         No active session. Open a chat to see its context window.
@@ -40,12 +54,24 @@ export default function ContextSidebarView({
     );
   }
 
-  return <ContextPane key={sessionId} sessionId={sessionId} />;
+  return (
+    <ContextPane
+      key={active.sessionId}
+      sessionId={active.sessionId}
+      scopeId={active.scopeId}
+    />
+  );
 }
 
 /* ---------------------------------- pane -------------------------------- */
 
-function ContextPane({ sessionId }: { sessionId: string }) {
+function ContextPane({
+  sessionId,
+  scopeId,
+}: {
+  sessionId: string;
+  scopeId: string | null;
+}) {
   const session = useDb((root) => root.app.sessions[sessionId] ?? null);
   const modelInfo = useDb((root) => {
     const s = root.app.sessions[sessionId];
@@ -62,7 +88,10 @@ function ContextPane({ sessionId }: { sessionId: string }) {
     <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-background text-foreground">
       <Header session={session} model={modelInfo} />
       <Grid session={session} model={modelInfo} />
-      <SessionFooter session={session} />
+      <div className="mt-auto">
+        <ExtraDirectories scopeId={scopeId} />
+        <SessionFooter session={session} />
+      </div>
     </div>
   );
 }
@@ -233,6 +262,246 @@ function Grid({
   );
 }
 
+/* ----------------------------- extra dirs ------------------------------- */
+
+/**
+ * Per-scope "extra directories" list. Folded in from the
+ * deleted `extra-dirs-sidebar` plugin. Sits directly above the
+ * session footer. Reads `scope.extraDirectories` and provides:
+ *
+ *  - row-level reveal / copy / remove (native context menu)
+ *  - inline "Add dir to context" button — opens the native
+ *    folder picker via `rpc.app.dialog.pickFolder()` and writes
+ *    straight to the replica.
+ *
+ * The `/add-dir` slash command (registered by this plugin's
+ * service) runs the same picker+update through an RPC entry
+ * point, so the keyboard flow and the click flow stay in sync.
+ */
+function ExtraDirectories({ scopeId }: { scopeId: string | null }) {
+  const dirs = useDb((root) => {
+    if (!scopeId) return null;
+    const scope = root.app.scopes[scopeId];
+    if (!scope) return null;
+    return scope.extraDirectories;
+  });
+  const dbClient = useDbClient();
+  const rpc = useRpc();
+
+  const rows = useMemo(() => dirs ?? [], [dirs]);
+
+  const handleRemove = useCallback(
+    async (dir: string) => {
+      if (!scopeId) return;
+      await dbClient.update((root) => {
+        const scope = root.app.scopes[scopeId];
+        if (!scope) return;
+        scope.extraDirectories = scope.extraDirectories.filter(
+          (d) => d !== dir,
+        );
+      });
+    },
+    [scopeId, dbClient],
+  );
+
+  const handleReveal = useCallback(
+    async (dir: string) => {
+      try {
+        const { error } = await rpc.app.dialog.openInFileBrowser({ path: dir });
+        if (error) console.warn("[context-sidebar] openInFileBrowser:", error);
+      } catch (err) {
+        console.warn("[context-sidebar] openInFileBrowser threw:", err);
+      }
+    },
+    [rpc],
+  );
+
+  const handleCopyPath = useCallback(async (dir: string) => {
+    try {
+      await navigator.clipboard.writeText(dir);
+    } catch (err) {
+      console.warn("[context-sidebar] clipboard.writeText failed:", err);
+    }
+  }, []);
+
+  const handleAdd = useCallback(async () => {
+    if (!scopeId) return;
+    try {
+      const result = await rpc.app.dialog.pickFolder();
+      if (result.cancelled) return;
+      const picked = result.path;
+      await dbClient.update((root) => {
+        const scope = root.app.scopes[scopeId];
+        if (!scope) return;
+        if (scope.extraDirectories.includes(picked)) return;
+        if (scope.directory === picked) return;
+        scope.extraDirectories = [...scope.extraDirectories, picked];
+      });
+    } catch (err) {
+      console.warn("[context-sidebar] pickFolder failed:", err);
+    }
+  }, [scopeId, dbClient, rpc]);
+
+  // Hide the section entirely if there's no scope to attach to
+  // — i.e. no chat in scope yet. The header above is already
+  // gated by `sessionId`, but `scopeId` can lag/be missing.
+  if (!scopeId) return null;
+
+  return (
+    <div className="border-t border-border px-3 py-3">
+      <div className="mb-1.5 min-w-0">
+        <div className="truncate text-[11px] text-muted-foreground">
+          Extra dirs in context
+        </div>
+      </div>
+      <div className="flex min-w-0 flex-col gap-1">
+        {rows.map((dir) => (
+          <ExtraDirRow
+            key={dir}
+            path={dir}
+            onOpenMenu={async (e) => {
+              const rect = (
+                e.currentTarget as HTMLButtonElement
+              ).getBoundingClientRect();
+              const { chosenId } = await rpc.app.contextMenu.show({
+                x: Math.round(rect.right),
+                y: Math.round(rect.bottom),
+                items: [
+                  {
+                    id: "reveal",
+                    label: "Reveal in file browser",
+                    enabled: true,
+                  },
+                  { id: "copy", label: "Copy path", enabled: true },
+                  { type: "separator" },
+                  {
+                    id: "remove",
+                    label: "Remove from session",
+                    enabled: true,
+                  },
+                ],
+              });
+              if (chosenId === "reveal") void handleReveal(dir);
+              else if (chosenId === "copy") void handleCopyPath(dir);
+              else if (chosenId === "remove") void handleRemove(dir);
+            }}
+          />
+        ))}
+        <AddDirRow onClick={handleAdd} />
+      </div>
+    </div>
+  );
+}
+
+function AddDirRow({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group relative flex min-h-[28px] min-w-0 cursor-default select-none items-center gap-2 overflow-hidden rounded-md border border-dashed border-border/60 py-1 pl-1.5 pr-2 text-[12px] text-muted-foreground hover:border-border hover:text-foreground"
+    >
+      <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+        <PlusIcon />
+      </span>
+      <span className="min-w-0 flex-1 truncate text-left">
+        Add dir to context
+      </span>
+    </button>
+  );
+}
+
+function ExtraDirRow({
+  path,
+  onOpenMenu,
+}: {
+  path: string;
+  onOpenMenu: (e: React.MouseEvent<HTMLButtonElement>) => void;
+}) {
+  const name = basename(path) || path;
+  return (
+    <HoverTip label={path} setAriaLabel={false}>
+      <div className="group relative flex min-h-[28px] min-w-0 items-center gap-2 overflow-hidden rounded-md border border-border/60 bg-foreground/[0.025] py-1 pl-1.5 pr-1 text-muted-foreground">
+        <span className="flex min-w-0 flex-1 flex-col leading-tight">
+          <span className="truncate text-[12px] text-foreground">{name}</span>
+          <span className="block min-w-0 truncate text-left font-mono text-[10px] text-muted-foreground">
+            {path}
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100">
+          <RowActionButton title="Actions" onClick={onOpenMenu}>
+            <MoreIcon />
+          </RowActionButton>
+        </span>
+      </div>
+    </HoverTip>
+  );
+}
+
+function RowActionButton({
+  title,
+  onClick,
+  children,
+}: {
+  title: string;
+  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={title}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick(e);
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+      className="flex h-[20px] w-[20px] items-center justify-center rounded text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+    >
+      {children}
+    </button>
+  );
+}
+
+function basename(p: string): string {
+  const trimmed = p.replace(/\/+$/, "");
+  const idx = trimmed.lastIndexOf("/");
+  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+}
+
+function PlusIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
+
+function MoreIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      stroke="none"
+    >
+      <circle cx="5" cy="12" r="1.5" />
+      <circle cx="12" cy="12" r="1.5" />
+      <circle cx="19" cy="12" r="1.5" />
+    </svg>
+  );
+}
+
 /* ---------------------------------- foot -------------------------------- */
 
 function SessionFooter({ session }: { session: SessionLike }) {
@@ -272,10 +541,8 @@ function SessionFooter({ session }: { session: SessionLike }) {
     });
 
   return (
-    <div className="mt-auto border-t border-border px-3 py-3">
-      <div className="mb-1.5 text-[10px] tracking-wide text-muted-foreground uppercase">
-        Session
-      </div>
+    <div className="border-t border-border px-3 py-3">
+      <div className="mb-1.5 text-[11px] text-muted-foreground">Session</div>
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11.5px]">
         {lines.map((line) => (
           // `display: contents` so dt/dd participate directly in the
@@ -330,24 +597,34 @@ function formatRelative(ts: number): string {
   return `${d}d ago`;
 }
 
-/* -------------------------- active session walk ------------------------- */
+/* -------------------------- active chat walk ---------------------------- */
+
+type ActiveChat = {
+  chatId: string | null;
+  sessionId: string | null;
+  scopeId: string | null;
+};
 
 /**
  * Inlined active-chat resolver. Mirrors the host's
  * `resolveActiveChatIdInAnyWindow`: prefer this window's active
  * chat, then walk panes, then fall back to any window.
  *
- * Re-implemented here (rather than imported from `@/lib/...`)
- * because this plugin lives in its own package and doesn't
- * resolve host-internal modules.
+ * Returns chat / session / scope ids in one pass so the
+ * extra-dirs section can re-use the same active-chat walk the
+ * context grid already does. Re-implemented here (rather than
+ * imported from `@/lib/...`) because this plugin lives in its
+ * own package and doesn't resolve host-internal modules.
  */
-function useActiveSessionId(windowId: string | null): string | null {
+function useActiveChat(windowId: string | null): ActiveChat {
   return useDb((root) => {
     const chatId = resolveActiveChatId(root, windowId);
-    if (!chatId) return null;
+    if (!chatId) return { chatId: null, sessionId: null, scopeId: null };
     const chat = root.app.chats[chatId];
-    if (!chat) return null;
-    return chat.session.kind === "ready" ? chat.session.sessionId : null;
+    if (!chat) return { chatId, sessionId: null, scopeId: null };
+    const sessionId =
+      chat.session.kind === "ready" ? chat.session.sessionId : null;
+    return { chatId, sessionId, scopeId: chat.scopeId ?? null };
   });
 }
 

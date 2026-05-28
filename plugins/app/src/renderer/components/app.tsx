@@ -3,6 +3,7 @@ import { useDb, useDbClient } from "@zenbujs/core/react";
 import { WorkspaceShell } from "./workspace-shell/workspace-shell";
 import { TooltipProvider } from "@zenbu/ui/tooltip";
 import { useThemeSync } from "@/lib/theme";
+import { useAnalyticsSync } from "@/lib/analytics";
 import { useWindowId } from "@/lib/window-state/window-id";
 import { useActiveView, useShowOnboardingView } from "@/lib/window-state/active-view";
 import { selectWorkspaceInRoot } from "@/lib/window-state/selection";
@@ -65,6 +66,7 @@ export function App() {
   const dbClient = useDbClient();
   const showOnboardingView = useShowOnboardingView();
   useThemeSync();
+  useAnalyticsSync();
 
   useReconcileActiveViewWithWorkspaces(
     workspaces,

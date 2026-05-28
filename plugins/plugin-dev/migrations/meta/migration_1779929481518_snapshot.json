@@ -1,0 +1,18 @@
+{
+  "id": "7085be89-51b3-4b16-810c-954ab4f80c7b",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "fields": {
+    "runs": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "2a748629234fa572",
+      "default": {}
+    },
+    "latestRunIdByPluginPath": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "6e35b6ffccad3897",
+      "default": {}
+    }
+  }
+}

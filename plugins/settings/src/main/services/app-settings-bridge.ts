@@ -35,6 +35,8 @@ const ITEM_IDS = {
   theme: "app.theme",
   sendMode: "app.defaultSendMode",
   vimMode: "app.vimMode",
+  chatDevtools: "app.chatDevtools",
+  disableTelemetry: "app.disableTelemetry",
 } as const;
 
 export class AppSettingsBridgeService extends Service.create({
@@ -125,6 +127,59 @@ export class AppSettingsBridgeService extends Service.create({
         },
       });
 
+      void reg.registerItem({
+        id: ITEM_IDS.disableTelemetry,
+        sectionId: SECTION_ID,
+        label: "Disable anonymous telemetry",
+        description:
+          "Stops the app from sending anonymous product analytics.",
+        group: "Privacy",
+        order: 0,
+        keywords: [
+          "analytics",
+          "telemetry",
+          "posthog",
+          "tracking",
+          "privacy",
+          "opt out",
+        ],
+        control: {
+          kind: "toggle",
+          value: settings.disableTelemetry,
+        },
+        rpc: {
+          plugin: "settings",
+          service: "appSettingsBridge",
+          method: "setDisableTelemetry",
+        },
+      });
+
+      void reg.registerItem({
+        id: ITEM_IDS.chatDevtools,
+        sectionId: SECTION_ID,
+        label: "Chat devtools",
+        description: "Show the invariant overlay pill in chats.",
+        group: "Developer",
+        order: 0,
+        keywords: [
+          "devtools",
+          "invariant",
+          "overlay",
+          "debug",
+          "diagnostics",
+          "chat",
+        ],
+        control: {
+          kind: "toggle",
+          value: settings.chatDevtools,
+        },
+        rpc: {
+          plugin: "settings",
+          service: "appSettingsBridge",
+          method: "setChatDevtools",
+        },
+      });
+
       return () => {
         for (const id of Object.values(ITEM_IDS)) {
           void reg.unregisterItem({ id });
@@ -193,6 +248,36 @@ export class AppSettingsBridgeService extends Service.create({
     });
     await this.ctx.settingsRegistry.setValue({
       id: ITEM_IDS.vimMode,
+      value: args.value,
+    });
+    return { ok: true };
+  }
+
+  async setChatDevtools(args: {
+    value: boolean;
+    windowId?: string;
+  }): Promise<{ ok: true }> {
+    if (typeof args.value !== "boolean") return { ok: true };
+    await this.ctx.db.client.update((root) => {
+      root.app.settings.chatDevtools = args.value;
+    });
+    await this.ctx.settingsRegistry.setValue({
+      id: ITEM_IDS.chatDevtools,
+      value: args.value,
+    });
+    return { ok: true };
+  }
+
+  async setDisableTelemetry(args: {
+    value: boolean;
+    windowId?: string;
+  }): Promise<{ ok: true }> {
+    if (typeof args.value !== "boolean") return { ok: true };
+    await this.ctx.db.client.update((root) => {
+      root.app.settings.disableTelemetry = args.value;
+    });
+    await this.ctx.settingsRegistry.setValue({
+      id: ITEM_IDS.disableTelemetry,
       value: args.value,
     });
     return { ok: true };

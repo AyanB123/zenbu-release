@@ -105,6 +105,8 @@ export class WorkspacesService extends Service.create({
       windowId: newWindowId,
       query: { skeletonRoute: skeletonRouteForActiveView(activeView) },
       baseWindow: {
+        minWidth: 430,
+        minHeight: 310,
         trafficLightPosition: { x: 14, y: 12 },
       },
       contextMenu: { prepend: buildContextMenuPrepend() },

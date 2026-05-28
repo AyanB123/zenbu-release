@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Install third-party Zenbu plugins from a git URL. Adds a command-palette action that opens an input modal, clones the repo into ~/.zenbu/plugins, installs deps with the bundled pnpm, then patches zenbu.local.ts to register the plugin.",
   "exports": {
-    ".": "./zenbu.plugin.ts"
+    ".": "./zenbu.plugin.ts",
+    "./lib/patch-local-plugins": "./src/main/lib/patch-local-plugins.ts"
   },
   "dependencies": {
     "@zenbu/ui": "workspace:*",
