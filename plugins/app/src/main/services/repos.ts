@@ -6,7 +6,7 @@ import path from "node:path"
 import { promisify } from "node:util"
 import { execFile } from "node:child_process"
 import { Service } from "@zenbujs/core/runtime"
-import { DbService } from "@zenbujs/core/services"
+import { DbService, RpcService } from "@zenbujs/core/services"
 import type { Schema } from "../schema"
 
 type Repo = Schema["repos"][string]
@@ -23,6 +23,22 @@ type Watcher = {
 }
 
 const WATCH_DEBOUNCE_MS = 250
+
+/**
+ * Heuristic for "the `git` binary is not installed". Node's
+ * `execFile` raises `ENOENT` when the program itself can't be
+ * spawned (distinct from a non-zero exit, which would surface as
+ * an `Error` with `stderr`/`code`). We also match against the
+ * message text as a fallback for runtimes that don't propagate the
+ * structured `code` field.
+ */
+function isGitMissing(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false
+  const e = err as { code?: unknown; errno?: unknown; message?: unknown }
+  if (e.code === "ENOENT") return true
+  if (typeof e.message === "string" && /ENOENT/.test(e.message)) return true
+  return false
+}
 
 function deriveRepoNameFromUrl(url: string): string | null {
   // Handle scp-like syntax: git@github.com:owner/repo.git
@@ -47,7 +63,7 @@ function deriveRepoNameFromUrl(url: string): string | null {
 
 export class ReposService extends Service.create({
   key: "repos",
-  deps: { db: DbService },
+  deps: { db: DbService, rpc: RpcService },
 }) {
   private readonly watchers = new Map<string, Watcher>()
 
@@ -167,6 +183,146 @@ export class ReposService extends Service.create({
     await this.syncRepoToDb(repoId, commonDir)
     await this.startWatcher(repoId, commonDir)
     return { repoId }
+  }
+
+  /**
+   * Initialize a fresh git repo at `directory`, lay down an
+   * initial commit so `HEAD` resolves (worktrees require a
+   * reachable commit), then `detectAndSync` and link the repo id
+   * onto every scope already pointing at `directory`.
+   *
+   * Called by the agent sidebar when the user picks "Create
+   * Worktree" on a workspace whose anchor folder isn't yet a git
+   * repo. The flow is intentionally silent — the user asked for
+   * a worktree, they get one, and the bookkeeping (init + first
+   * commit) happens transparently.
+   *
+   * Idempotent: if `directory` is already inside a git repo, we
+   * short-circuit through `detectAndSync` and just make sure the
+   * matching scopes have `repoId` filled in.
+   */
+  async initRepoAtDirectory(args: {
+    directory: string
+  }): Promise<
+    | { ok: true; repoId: string }
+    | { ok: false; error: string }
+  > {
+    const directory = args.directory?.trim()
+    if (!directory || !path.isAbsolute(directory)) {
+      return { ok: false, error: "absolute directory required" }
+    }
+    if (!fs.existsSync(directory)) {
+      return { ok: false, error: `directory does not exist: ${directory}` }
+    }
+
+    // Short-circuit if `directory` is already in a git repo.
+    let commonDir = await this.resolveCommonDir(directory)
+    if (!commonDir) {
+      try {
+        await execFileP("git", ["-C", directory, "init"])
+      } catch (err) {
+        // ENOENT — the `git` binary is not on PATH. Surface a
+        // user-visible toast so the user understands why nothing
+        // happened, instead of swallowing the failure into the
+        // console.
+        if (isGitMissing(err)) {
+          this.ctx.rpc.emit.app.notify({
+            tone: "error",
+            title: "Git is not installed",
+            description:
+              "Install git and make sure it's on your PATH, then try again.",
+          })
+          return { ok: false, error: "git is not installed" }
+        }
+        const message =
+          err instanceof Error ? err.message : String(err ?? "git init failed")
+        return { ok: false, error: message }
+      }
+
+      // Stage anything currently in the directory and lay down a
+      // first commit. `--allow-empty` covers the freshly-created
+      // project case (no files yet); worktree creation needs a
+      // reachable HEAD either way.
+      try {
+        await execFileP("git", ["-C", directory, "add", "-A"])
+      } catch {
+        // Best-effort — a missing `.gitignore` etc. shouldn't
+        // block the initial commit.
+      }
+      const identityArgs = await this.fallbackIdentityArgs(directory)
+      try {
+        await execFileP("git", [
+          "-C",
+          directory,
+          ...identityArgs,
+          "commit",
+          "--allow-empty",
+          "-m",
+          "Initial commit",
+        ])
+      } catch (err) {
+        const message =
+          err instanceof Error
+            ? err.message
+            : String(err ?? "git commit failed")
+        return { ok: false, error: message }
+      }
+
+      commonDir = await this.resolveCommonDir(directory)
+      if (!commonDir) {
+        return { ok: false, error: "git init completed but commonDir not resolvable" }
+      }
+    }
+
+    const repoId = computeRepoId(commonDir)
+    await this.syncRepoToDb(repoId, commonDir)
+    await this.startWatcher(repoId, commonDir)
+
+    // Backfill `repoId` on any scope that already pointed at this
+    // directory but pre-dates the git init. Without this, the
+    // sidebar's `useActiveRepo()` selector (which finds the
+    // workspace's repo via `scope.repoId`) keeps returning null.
+    await this.ctx.db.client.update(root => {
+      for (const scope of Object.values(root.app.scopes)) {
+        if (scope.directory === directory && scope.repoId == null) {
+          scope.repoId = repoId
+        }
+      }
+    })
+
+    return { ok: true, repoId }
+  }
+
+  /**
+   * Build `-c user.name=... -c user.email=...` overrides for
+   * `git commit`, but only for whichever of the two isn't already
+   * configured (global or local). Lets the initial commit succeed
+   * on machines where the user has never set up a git identity
+   * without trampling an existing one.
+   */
+  private async fallbackIdentityArgs(directory: string): Promise<string[]> {
+    const args: string[] = []
+    const probe = async (key: string) => {
+      try {
+        const { stdout } = await execFileP("git", [
+          "-C",
+          directory,
+          "config",
+          "--get",
+          key,
+        ])
+        return stdout.trim().length > 0
+      } catch {
+        return false
+      }
+    }
+    if (!(await probe("user.name"))) {
+      args.push("-c", "user.name=Zenbu")
+    }
+    if (!(await probe("user.email"))) {
+      args.push("-c", "user.email=zenbu@localhost")
+    }
+    return args
   }
 
   async createWorktree(args: {

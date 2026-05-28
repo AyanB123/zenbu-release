@@ -15,7 +15,6 @@ import {
   useCreateWorktreeDialogState,
 } from "@/lib/create-worktree-dialog-store"
 import { useActiveRepo } from "../../hooks/use-sidebar-selectors"
-import { useActiveWorkspaceId } from "@/lib/window-state/active-view"
 import { useOnWorktreeCreated } from "../../hooks/use-on-worktree-created"
 import { useHasTrafficLights } from "@/lib/window-state/has-traffic-lights"
 
@@ -80,14 +79,12 @@ export function WorkspaceShell() {
 
 function CreateWorktreeDialogConnected() {
   const dialog = useCreateWorktreeDialogState()
-  const activeWorkspaceId = useActiveWorkspaceId()
   const activeRepo = useActiveRepo()
   const onCreated = useOnWorktreeCreated()
   return (
     <CreateWorktreeDialog
       open={dialog.open}
       onOpenChange={setCreateWorktreeDialogOpen}
-      workspaceId={activeWorkspaceId}
       repoId={activeRepo?.id ?? null}
       mainWorktreePath={activeRepo?.mainWorktreePath ?? null}
       mainWorktreeBranch={

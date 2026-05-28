@@ -221,4 +221,19 @@ export type Events = {
    * "open in new tab" semantics without registering a separate
    * scope. */
   listNavActivate: { scopeId: string; alt: boolean; source: string }
+  /**
+   * Generic main→renderer notification. The renderer
+   * (`NotifyListener`) subscribes and routes each event into the
+   * sonner toaster with the matching tone. Use this from main‐
+   * process services for one-shot user-visible feedback that
+   * isn't tied to a specific in-app surface (e.g. "git is not
+   * installed", "failed to write file", …). For long-running
+   * progress, prefer a domain-specific event so the toast can
+   * stay live and update in place.
+   */
+  notify: {
+    tone: "error" | "success" | "info" | "warning"
+    title: string
+    description?: string
+  }
 }

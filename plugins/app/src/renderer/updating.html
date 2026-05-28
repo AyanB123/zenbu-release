@@ -59,7 +59,7 @@
       /* Mirrors `.text-shimmer` in main.css: a left\u2192right luminance sweep
          masked to text. Inlined here (instead of importing the renderer
          stylesheet) because this page lives outside the renderer build. */
-      @keyframes loading-shimmer {
+      @keyframes updating-shimmer {
         0% {
           background-position: 200% 0;
         }
@@ -81,7 +81,7 @@
         -webkit-background-clip: text;
         background-clip: text;
         color: transparent;
-        animation: loading-shimmer 1.6s linear infinite;
+        animation: updating-shimmer 1.6s linear infinite;
       }
       @media (prefers-color-scheme: dark) {
         .label {

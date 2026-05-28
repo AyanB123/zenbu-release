@@ -25,5 +25,6 @@ export default definePlugin({
   services: ["./src/main/services/*.ts"],
   schema: "./src/main/schema.ts",
   migrations: "./migrations",
+  events: "./src/main/events.ts",
   dependsOn: [{ name: "app", from: "../../zenbu.config.ts" }],
 });

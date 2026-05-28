@@ -5,7 +5,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@zenbu/ui/collapsible"
-import { useDb, useDbClient, useRpc } from "@zenbujs/core/react"
+import { useDb, useRpc } from "@zenbujs/core/react"
 import {
   Dialog,
   DialogContent,
@@ -35,17 +35,16 @@ import { cn } from "@/lib/utils"
 export type CreateWorktreeDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
-  workspaceId: string | null
   repoId: string | null
   mainWorktreePath: string | null
-  /** Branch the repo's primary worktree is currently on. The
-   * "fallback" default source ref when the workspace hasn't pinned
-   * its own preference. */
+  /** Branch the repo's primary (main) worktree is currently on.
+   * The default source ref when no per-invocation override is
+   * supplied — lines up with the user's intuition that "branch
+   * from" almost always means "branch from main". */
   mainWorktreeBranch: string | null
   /** Explicit per-invocation source ref override (e.g. context-menu
    * "New worktree from <branch>"). When non-null, takes precedence
-   * over the workspace's persisted default and does NOT mutate it
-   * (the override is one-shot). */
+   * over `mainWorktreeBranch` and is one-shot — does not persist. */
   defaultSourceRef: string | null
   /** Called after the worktree is created so the caller can react (e.g. focus it). */
   onCreated?: (args: { worktreePath: string; branch: string }) => void
@@ -62,19 +61,16 @@ export type CreateWorktreeDialogProps = {
  *   2. **Source branch** the new branch is cut from. Picker defaults
  *      to:
  *        explicit `defaultSourceRef` (one-shot override from caller)
- *          → workspace's pinned `defaultWorktreeBranch`
  *          → main worktree's current branch.
- *      Selecting a branch in the picker is implicitly a "make this
- *      the workspace default" gesture: we write the choice straight
- *      into `workspace.defaultWorktreeBranch` so the next time the
- *      dialog opens it lands on the same branch. The one-shot
- *      override path (context menu) sidesteps the picker and never
- *      mutates the workspace default.
+ *      The picker is purely transient — user picks are *not*
+ *      persisted across dialog opens. "Branch from" almost always
+ *      means "branch from main", so we just default to that every
+ *      time and let the user override per-invocation if they want
+ *      something else.
  */
 export function CreateWorktreeDialog({
   open,
   onOpenChange,
-  workspaceId,
   repoId,
   mainWorktreePath,
   mainWorktreeBranch,
@@ -82,13 +78,6 @@ export function CreateWorktreeDialog({
   onCreated,
 }: CreateWorktreeDialogProps) {
   const rpc = useRpc()
-  const dbClient = useDbClient()
-
-  const workspaceDefaultBranch = useDb(root =>
-    workspaceId
-      ? root.app.workspaces[workspaceId]?.defaultWorktreeBranch ?? null
-      : null,
-  )
 
   // Repo's branches, sorted by most recent activity.
   const branches = useDb(root => {
@@ -99,7 +88,7 @@ export function CreateWorktreeDialog({
   })
 
   const effectiveDefaultRef =
-    defaultSourceRef ?? workspaceDefaultBranch ?? mainWorktreeBranch ?? null
+    defaultSourceRef ?? mainWorktreeBranch ?? null
 
   const [branch, setBranch] = useState("")
   const [path, setPath] = useState("")
@@ -144,19 +133,9 @@ export function CreateWorktreeDialog({
   const handlePickSource = (name: string) => {
     setSourceRef(name)
     setSourcePickerOpen(false)
-    // Persist as the workspace default unless this open was a
-    // one-shot override (context-menu "from this branch"), and
-    // only pin actual branch names (not raw SHAs).
-    if (
-      workspaceId &&
-      !defaultSourceRef &&
-      isLikelyBranchName(name)
-    ) {
-      void dbClient.update(root => {
-        const ws = root.app.workspaces[workspaceId]
-        if (ws) ws.defaultWorktreeBranch = name
-      })
-    }
+    // No persistence: "Branch from" always defaults to the main
+    // worktree. The picker is a one-shot override for this
+    // submission only.
   }
 
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -333,15 +312,6 @@ function Field({
       {children}
     </div>
   )
-}
-
-/**
- * Heuristic: a "branch-like" ref doesn't look like a SHA. Used so we
- * never pin a raw commit hash from the context-menu override as the
- * workspace default.
- */
-function isLikelyBranchName(ref: string): boolean {
-  return !/^[0-9a-f]{7,40}$/i.test(ref)
 }
 
 /** Collapse runs of whitespace in a branch name to single hyphens.

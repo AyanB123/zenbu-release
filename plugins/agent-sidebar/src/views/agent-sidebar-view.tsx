@@ -19,12 +19,11 @@ import { openArchiveWorktreeDialog } from "@/lib/archive-worktree-dialog-store"
 import {
   useActiveRepo,
   useSidebarGroups,
-  useScopeRows,
 } from "@/hooks/use-sidebar-selectors"
 import { useSidebarActions } from "@/hooks/use-sidebar-actions"
 import {
   useActiveChatId,
-  useActiveScopeId,
+  useActiveWorkspaceId,
 } from "@/lib/window-state/active-view"
 import {
   useToggleWorktreeGroupCollapsed,
@@ -32,6 +31,7 @@ import {
 } from "@/lib/window-state/worktree-groups"
 import { useDb, useDbClient, useRpc } from "@zenbujs/core/react"
 import { useWindowId } from "@/lib/window-state/window-id"
+import type { Root } from "@/lib/window-state/types"
 import {
   focusPaneShowingChatInRoot,
   selectChatInRoot,
@@ -71,14 +71,14 @@ const BODY_BOTTOM_PAD = SIDEBAR_FOOTER_HEIGHT + SIDEBAR_FOOTER_FADE
  */
 export default function AgentSidebarView(_props: ViewComponentProps) {
   const activeRepo = useActiveRepo()
-  const activeScopeId = useActiveScopeId()
+  const activeWorkspaceId = useActiveWorkspaceId()
   const activeChatId = useActiveChatId()
   const sidebarGroups = useSidebarGroups()
-  const scopeRows = useScopeRows()
   const actions = useSidebarActions()
   const collapsedGroups = useWorktreeGroupCollapsed()
   const toggleWorktreeGroup = useToggleWorktreeGroupCollapsed()
   const dbClient = useDbClient()
+  const rpc = useRpc()
   const windowId = useWindowId()
   const events = useEvents()
   const setSidebarOpen = useSetLeftSidebarOpen()
@@ -98,13 +98,52 @@ export default function AgentSidebarView(_props: ViewComponentProps) {
     return () => off()
   }, [events, setSidebarOpen, listNav])
 
+  // "Import Worktrees…" lives on the command palette (registered
+  // by `AgentSidebarActionsService`). Dispatch comes back through
+  // this event so the renderer-side import flow runs against this
+  // window's active workspace + repo.
+  useEffect(() => {
+    const off = events.agentSidebar.importWorktrees.subscribe(payload => {
+      if (payload.windowId !== windowId) return
+      void actions.handleImportWorktrees()
+    })
+    return () => off()
+  }, [events, windowId, actions])
+
   const multiGroupVisible = sidebarGroups.length > 1
 
-  const openCreateWorktreeFromSidebar = () => {
-    const activeRow = scopeRows.find(r => r.scopeId === activeScopeId)
-    const sourceRef =
-      activeRow?.worktree?.branch ?? activeRow?.worktree?.headSha ?? null
-    openCreateWorktreeDialog(sourceRef)
+  const openCreateWorktreeFromSidebar = async () => {
+    // No repo backing the workspace yet — transparently `git init`
+    // + initial commit on the workspace's anchor directory so the
+    // worktree machinery has a HEAD to branch from. The user
+    // asked for a worktree; this is bookkeeping, not a question.
+    if (!activeRepo && activeWorkspaceId) {
+      const directory = pickWorkspaceAnchorDirectory(
+        dbClient.readRoot(),
+        activeWorkspaceId,
+      )
+      if (!directory) return
+      try {
+        const result = await rpc.app.repos.initRepoAtDirectory({ directory })
+        if (!result.ok) {
+          console.error(
+            "[agent-sidebar] initRepoAtDirectory failed:",
+            result.error,
+          )
+          return
+        }
+      } catch (err) {
+        console.error("[agent-sidebar] initRepoAtDirectory threw:", err)
+        return
+      }
+    }
+
+    // No one-shot override — let the dialog default to the main
+    // worktree's branch. Branching from the *current* worktree is
+    // almost never what the user wants; if they really want it,
+    // the per-row context menu's "New worktree from <branch>…"
+    // still threads an explicit override through.
+    openCreateWorktreeDialog(null)
   }
 
   // Activating a chat row: select it in the active pane, then
@@ -132,10 +171,7 @@ export default function AgentSidebarView(_props: ViewComponentProps) {
         <NewChatSplitButton
           onNewChat={() => actions.handleNewChat()}
           onCreateWorktree={
-            activeRepo ? openCreateWorktreeFromSidebar : undefined
-          }
-          onImportWorktrees={
-            activeRepo ? actions.handleImportWorktrees : undefined
+            activeWorkspaceId ? openCreateWorktreeFromSidebar : undefined
           }
           primaryAction="new-chat"
         />
@@ -187,6 +223,29 @@ export default function AgentSidebarView(_props: ViewComponentProps) {
       </div>
     </div>
   )
+}
+
+/**
+ * Pick the directory we should `git init` when the user asks for a
+ * worktree on a workspace without a repo. Prefers the workspace's
+ * earliest-created scope (the "anchor" scope, matching the
+ * convention everywhere else in the host). Returns `null` if the
+ * workspace somehow has no scopes — in practice this shouldn't
+ * happen because workspaces are always created with one.
+ */
+function pickWorkspaceAnchorDirectory(
+  root: Root,
+  workspaceId: string,
+): string | null {
+  let earliest: { directory: string; createdAt: number } | null = null
+  for (const scope of Object.values(root.app.scopes)) {
+    if (scope.workspaceId !== workspaceId) continue
+    if (scope.archived) continue
+    if (!earliest || scope.createdAt < earliest.createdAt) {
+      earliest = { directory: scope.directory, createdAt: scope.createdAt }
+    }
+  }
+  return earliest?.directory ?? null
 }
 
 // ---- worktree-group branch ----------------------------------------------

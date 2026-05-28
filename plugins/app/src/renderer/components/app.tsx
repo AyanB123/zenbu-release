@@ -28,6 +28,9 @@ const KilledAgentsWatcher = lazy(() =>
     default: m.KilledAgentsWatcher,
   })),
 )
+const NotifyListener = lazy(() =>
+  import("./notify-listener").then((m) => ({ default: m.NotifyListener })),
+)
 const ShortcutBridge = lazy(() =>
   import("./shortcut-bridge").then((m) => ({ default: m.ShortcutBridge })),
 )
@@ -90,6 +93,7 @@ export function App() {
         <ShortcutBridge />
         <KilledAgentsWatcher />
         <AgentCompletionNotifier />
+        <NotifyListener />
         <OAuthFlowModal />
         <Toaster position="top-right" />
       </Suspense>

@@ -9,11 +9,6 @@ import { cn } from "@/lib/utils"
 export type NewChatSplitButtonProps = {
   onNewChat: () => void
   onCreateWorktree?: () => void
-  /** Optional. When provided, the dropdown shows an "Import
-   * Worktrees" item that creates a placeholder chat for every
-   * worktree of the active repo that doesn't already have one,
-   * making them all appear as groups in the sidebar. */
-  onImportWorktrees?: () => void
   /**
    * Which action is primary (the big left button). Currently only
    * `"new-chat"` is supported; the prop is retained so callers
@@ -27,13 +22,14 @@ export type NewChatSplitButtonProps = {
  * Split button rendered at the top of the agent sidebar.
  *
  * The big left half is "New Chat". The thin right half opens a
- * dropdown that exposes secondary actions — worktree create /
- * import when an active repo is available.
+ * dropdown that exposes secondary actions — currently just
+ * "Create Worktree". ("Import Worktrees…" used to live here too;
+ * it now lives on the command palette, registered by
+ * `AgentSidebarActionsService`.)
  */
 export function NewChatSplitButton({
   onNewChat,
   onCreateWorktree,
-  onImportWorktrees,
 }: NewChatSplitButtonProps) {
   return (
     <div
@@ -74,13 +70,8 @@ export function NewChatSplitButton({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-[180px]">
           {onCreateWorktree && (
-            <DropdownMenuItem onSelect={onCreateWorktree}>
+            <DropdownMenuItem onSelect={() => onCreateWorktree()}>
               Create Worktree
-            </DropdownMenuItem>
-          )}
-          {onImportWorktrees && (
-            <DropdownMenuItem onSelect={onImportWorktrees}>
-              Import Worktrees
             </DropdownMenuItem>
           )}
         </DropdownMenuContent>
