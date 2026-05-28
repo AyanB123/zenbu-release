@@ -43,7 +43,7 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 22px;
+        gap: 18px;
         -webkit-app-region: no-drag;
         user-select: none;
         -webkit-user-select: none;
@@ -61,8 +61,11 @@
         pointer-events: none;
       }
       .icon {
-        width: 160px;
-        height: 160px;
+        /* Sized for the launcher's installer-shaped BaseWindow (480x320).
+           Splash uses 160px at 1100x750 — keep the ratio close enough so
+           the visual identity carries between the two screens. */
+        width: 72px;
+        height: 72px;
         image-rendering: -webkit-optimize-contrast;
         pointer-events: none;
       }
@@ -74,7 +77,7 @@
         100% { background-position: -200% 0; }
       }
       .label {
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 500;
         letter-spacing: -0.005em;
         background-image: linear-gradient(
@@ -114,19 +117,19 @@
         body[data-state="error"] .label { color: #fca5a5; }
       }
       .error {
-        margin: 0 24px;
-        max-width: min(720px, calc(100% - 48px));
-        padding: 12px 14px;
+        margin: 0 16px;
+        max-width: calc(100% - 32px);
+        padding: 10px 12px;
         border-radius: 6px;
         background: rgba(220, 38, 38, 0.08);
         color: #b91c1c;
-        font-size: 12px;
-        line-height: 1.5;
+        font-size: 11px;
+        line-height: 1.45;
         white-space: pre-wrap;
         word-break: break-word;
         text-align: left;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        max-height: 280px;
+        max-height: 140px;
         overflow: auto;
         display: none;
       }

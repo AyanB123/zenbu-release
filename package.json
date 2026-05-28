@@ -1,6 +1,6 @@
 {
   "name": "hackable-gui",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "private": true,
   "type": "module",
   "main": "node_modules/@zenbujs/core/dist/setup-gate.mjs",
@@ -18,7 +18,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@zenbujs/core": "0.2.2"
+    "@zenbujs/core": "0.2.3"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

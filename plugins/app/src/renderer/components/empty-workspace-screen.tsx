@@ -161,7 +161,7 @@ export function EmptyWorkspaceScreen() {
                 />
                 <ActionRow
                   icon={<FolderOpen className="h-[18px] w-[18px]" strokeWidth={1.5} />}
-                  title="Open project"
+                  title="Open folder"
                   disabled={busy !== null}
                   onClick={handleOpenProject}
                 />
