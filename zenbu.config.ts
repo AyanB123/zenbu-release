@@ -55,10 +55,6 @@ export default defineConfig({
     "./plugins/plugin-installer/zenbu.plugin.ts",
     "./plugins/plugin-dev/zenbu.plugin.ts",
     // "./plugins/react-doctor/zenbu.plugin.ts",
-    "../.zenbu/plugins/super-dooper/zenbu.plugin.ts",
-    "../.zenbu/plugins/loopy/zenbu.plugin.ts",
-    "../.zenbu/plugins/whafshdf/zenbu.plugin.ts",
-    "../.zenbu/plugins/lapoosh/zenbu.plugin.ts",
   ],
 
   localPlugins: "./zenbu.local.ts",
