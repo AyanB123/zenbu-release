@@ -3,7 +3,7 @@ import { useDb } from "@zenbujs/core/react";
 /**
  * Inlined copy of the host's home-dir helpers. The host plugin
  * doesn't export these on a public subpath, and they're small —
- * easier to duplicate than to widen `@hackable-gui/app`'s exports
+ * easier to duplicate than to widen `@zenbu/app`'s exports
  * for one consumer.
  *
  * Reads `root.app.env.homeDir`, stamped by the host's `InitService`

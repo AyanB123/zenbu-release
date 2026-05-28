@@ -39,7 +39,7 @@ import type { EventItem, ProviderModelRef, QueuedDraft, Session } from "./types"
 
 export const PI_SESSION_DIR = path.join(
   os.homedir(),
-  ".hackable-gui",
+  ".zenbu",
   "pi-sessions",
 )
 

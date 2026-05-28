@@ -2,7 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Service } from "@zenbujs/core/runtime";
 import { ViewRegistryService } from "@zenbujs/core/services";
-import { SettingsRegistryService } from "@hackable-gui/settings/services/settings-registry";
+import { SettingsRegistryService } from "@zenbu/settings/services/settings-registry";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const VIEW_SOURCE = path.resolve(

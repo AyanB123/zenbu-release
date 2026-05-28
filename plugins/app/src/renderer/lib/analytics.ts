@@ -29,7 +29,7 @@ function init() {
     typeof navigator !== "undefined" ? navigator.platform : undefined;
 
   posthog.register({
-    app: "hackable-gui",
+    app: "zenbu",
     runtime: "electron-renderer",
     ...(platform ? { platform } : {}),
   });

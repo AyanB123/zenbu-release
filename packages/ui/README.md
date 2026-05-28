@@ -1,6 +1,6 @@
 # @zenbu/ui
 
-Shared UI primitives for the hackable-gui monorepo. Shipped as a regular
+Shared UI primitives for the Zenbu monorepo. Shipped as a regular
 npm-style package so plugins anywhere can import them.
 
 Two flavors of things live here:

@@ -475,13 +475,13 @@ function RecentProjectRow({
       type="button"
       onClick={onClick}
       disabled={disabled || busy}
-      className="group flex w-full items-baseline gap-3 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-accent/50 focus-visible:bg-accent/50 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+      className="group flex w-full items-baseline gap-3 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-accent/50 focus-visible:bg-accent/50 focus-visible:outline-none disabled:opacity-40"
     >
       <span className="shrink-0 truncate text-[13px] text-foreground/90 group-hover:text-foreground">
         {project.name}
       </span>
       <span className="min-w-0 flex-1 truncate text-[12px] text-muted-foreground">
-        {busy ? "Opening…" : parentPath}
+        {parentPath}
       </span>
     </button>
   )

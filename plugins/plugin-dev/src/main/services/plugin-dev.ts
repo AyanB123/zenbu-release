@@ -17,7 +17,7 @@ import type { InferSchemaRoot } from "@zenbujs/core/db"
 import {
   patchLocalPlugins,
   findProjectRoot,
-} from "@hackable-gui/plugin-installer/lib/patch-local-plugins"
+} from "@zenbu/plugin-installer/lib/patch-local-plugins"
 import pluginDevSchema from "../schema"
 
 type PluginDevRun =

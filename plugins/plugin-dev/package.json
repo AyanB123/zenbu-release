@@ -1,5 +1,5 @@
 {
-  "name": "@hackable-gui/plugin-dev",
+  "name": "@zenbu/plugin-dev",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,7 +7,7 @@
     ".": "./zenbu.plugin.ts"
   },
   "dependencies": {
-    "@hackable-gui/plugin-installer": "workspace:*",
+    "@zenbu/plugin-installer": "workspace:*",
     "@zenbu/ui": "workspace:*",
     "@zenbujs/core": "^0.2.0",
     "lucide-react": "^1.16.0",

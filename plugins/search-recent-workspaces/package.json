@@ -1,5 +1,5 @@
 {
-  "name": "@hackable-gui/search-recent-workspaces",
+  "name": "@zenbu/search-recent-workspaces",
   "version": "0.1.0",
   "private": true,
   "type": "module",

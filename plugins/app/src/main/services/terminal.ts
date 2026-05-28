@@ -80,7 +80,7 @@ export class TerminalService extends Service.create({
     this.spawn = pty.spawn
 
     // The bottom-panel "Terminal" view is contributed by the
-    // `@hackable-gui/terminal` plugin (a `rendering: "component"`
+    // `@zenbu/terminal` plugin (a `rendering: "component"`
     // view). This service stays focused on the PTY lifecycle + DB
     // state; the plugin drives the UI via the RPCs + events below.
 
