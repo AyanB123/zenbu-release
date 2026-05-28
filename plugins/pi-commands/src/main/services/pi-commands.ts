@@ -80,23 +80,28 @@ const PI_COMMANDS: ReadonlyArray<{
 }> = [
   { name: "settings", description: "Open Pi settings" },
   { name: "model", description: "Select or set model", insertOnSelect: true },
-  { name: "scoped-models", description: "Enable/disable models for cycling" },
+  // TEMP: hidden while shipping to early users — no GUI panel yet.
+  // { name: "scoped-models", description: "Enable/disable models for cycling" },
   { name: "export", description: "Export session to HTML or JSONL", insertOnSelect: true },
-  { name: "import", description: "Import and resume a JSONL session", insertOnSelect: true },
+  // TEMP: hidden — no GUI panel yet.
+  // { name: "import", description: "Import and resume a JSONL session", insertOnSelect: true },
   { name: "share", description: "Share session as a private GitHub gist" },
   { name: "copy", description: "Copy last assistant message" },
   { name: "name", description: "Set session display name", insertOnSelect: true },
   { name: "session", description: "Show session info and stats" },
-  { name: "changelog", description: "Show Pi changelog" },
-  { name: "hotkeys", description: "Show keyboard shortcuts" },
+  // TEMP: hidden — no GUI panel yet.
+  // { name: "changelog", description: "Show Pi changelog" },
+  // { name: "hotkeys", description: "Show keyboard shortcuts" },
   { name: "fork", description: "Fork from a previous user message" },
   { name: "clone", description: "Duplicate the current session" },
   { name: "tree", description: "Navigate session tree" },
-  { name: "login", description: "Configure provider authentication" },
-  { name: "logout", description: "Remove provider authentication" },
+  // TEMP: hidden — no GUI panel yet.
+  // { name: "login", description: "Configure provider authentication" },
+  // { name: "logout", description: "Remove provider authentication" },
   { name: "new", description: "Start a new session" },
   { name: "compact", description: "Manually compact context", insertOnSelect: true },
-  { name: "resume", description: "Resume a different session" },
+  // TEMP: hidden — no GUI panel yet.
+  // { name: "resume", description: "Resume a different session" },
   { name: "reload", description: "Reload extensions, skills, prompts, themes" },
   { name: "quit", description: "Close the current chat tab" },
 ]

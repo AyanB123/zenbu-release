@@ -181,22 +181,25 @@ function ListPane({
     return uninstalled.filter(p => p.name.toLowerCase().includes(lowerQ))
   }, [available, installedKeys, lowerQ])
 
-  const filteredMarketplace = useMemo<MarketplacePlugin[]>(() => {
-    const sorted = PLUGINS.slice().sort((a, b) => b.installs - a.installs)
-    const matched = lowerQ
-      ? sorted.filter(p =>
-          [p.name, p.tagline, p.author, p.tags.join(" ")]
-            .join(" ")
-            .toLowerCase()
-            .includes(lowerQ),
-        )
-      : sorted
-    return matched.filter(
-      p =>
-        !installedKeys.has(p.id.toLowerCase()) &&
-        !installedKeys.has(p.name.toLowerCase()),
-    )
-  }, [lowerQ, installedKeys])
+  // TEMP: mock marketplace catalog hidden while we hand the app to
+  // a couple of users. Restore by uncommenting the block below.
+  const filteredMarketplace = useMemo<MarketplacePlugin[]>(() => [], [])
+  // const filteredMarketplace = useMemo<MarketplacePlugin[]>(() => {
+  //   const sorted = PLUGINS.slice().sort((a, b) => b.installs - a.installs)
+  //   const matched = lowerQ
+  //     ? sorted.filter(p =>
+  //         [p.name, p.tagline, p.author, p.tags.join(" ")]
+  //           .join(" ")
+  //           .toLowerCase()
+  //           .includes(lowerQ),
+  //       )
+  //     : sorted
+  //   return matched.filter(
+  //     p =>
+  //       !installedKeys.has(p.id.toLowerCase()) &&
+  //       !installedKeys.has(p.name.toLowerCase()),
+  //   )
+  // }, [lowerQ, installedKeys])
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
