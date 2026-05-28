@@ -8,7 +8,7 @@ import {
 const IS_MAC = process.platform === "darwin"
 
 /**
- * Owns the Cmd+L recent-workspaces palette.
+ * Owns the Cmd+O recent-workspaces palette.
  *
  * Two responsibilities:
  *
@@ -22,7 +22,7 @@ const IS_MAC = process.platform === "darwin"
  *     loop.
  *
  *  2. **Palette shell.** Registers a `searchRecentWorkspaces`
- *     shortcut (Cmd+L by default) and a matching command-palette
+ *     shortcut (Cmd+O by default) and a matching command-palette
  *     action; both dispatch the same `togglePalette` event. The
  *     content-script-mounted palette subscribes and toggles its
  *     open state — same pattern as `pluginInstaller` /
@@ -64,8 +64,8 @@ export class SearchRecentWorkspacesService extends Service.create({
         description:
           "Open the recent-workspaces palette \u2014 a focused fuzzy picker that jumps between workspaces by last-visited time.",
         defaultBinding: IS_MAC
-          ? { meta: true, key: "l" }
-          : { control: true, key: "l" },
+          ? { meta: true, key: "o" }
+          : { control: true, key: "o" },
         handler: () => {
           this.emitToggle("shortcut")
         },
@@ -84,7 +84,7 @@ export class SearchRecentWorkspacesService extends Service.create({
       void reg.register({
         id,
         label: "Recent Workspaces\u2026",
-        hint: IS_MAC ? "\u2318L" : "Ctrl+L",
+        hint: IS_MAC ? "\u2318O" : "Ctrl+O",
         group: "Navigation",
         rpc: {
           plugin: "searchRecentWorkspaces",

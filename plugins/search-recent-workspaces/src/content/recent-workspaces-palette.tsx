@@ -39,7 +39,7 @@ type WorkspaceRowData = {
 }
 
 /**
- * Cmd+L recent-workspaces palette.
+ * Cmd+O recent-workspaces palette.
  *
  * Sorted by our own `lastVisitedAt[workspaceId]`, falling back to
  * `workspace.createdAt` for never-visited workspaces so they still

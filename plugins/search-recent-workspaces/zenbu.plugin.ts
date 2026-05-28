@@ -3,7 +3,7 @@ import { definePlugin } from "@zenbujs/core/config"
 /**
  * Recent Workspaces palette.
  *
- * Cmd+L (mod+L) pops a VS Code Cmd+P-flavored picker listing every
+ * Cmd+O (mod+O) pops a VS Code Cmd+P-flavored picker listing every
  * workspace, sorted by the last time it was active in any window.
  * Enter swaps to the previously-active workspace (rows[0] is the
  * currently active workspace, so the cursor defaults to row 1).
