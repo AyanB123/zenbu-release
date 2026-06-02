@@ -28,7 +28,7 @@
     "@vitejs/plugin-react-swc": "^4.3.1",
     "@zenbu/ui": "workspace:*",
     "@zenbu/view-theme": "workspace:*",
-    "@zenbujs/core": "^0.2.0",
+    "@zenbujs/core": "^0.4.0",
     "allotment": "^1.20.5",
     "anser": "^2.3.5",
     "class-variance-authority": "^0.7.1",

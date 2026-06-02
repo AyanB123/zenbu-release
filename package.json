@@ -15,7 +15,8 @@
     "lint": "eslint .",
     "ci": "pnpm run typecheck && pnpm run lint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "release:signed": "bash scripts/release-signed.sh"
   },
   "dependencies": {
     "@zenbujs/core": "0.4.0"

@@ -9,7 +9,7 @@
   "dependencies": {
     "@zenbu/plugin-installer": "workspace:*",
     "@zenbu/ui": "workspace:*",
-    "@zenbujs/core": "^0.2.0",
+    "@zenbujs/core": "^0.4.0",
     "lucide-react": "^1.16.0",
     "nanoid": "^5.1.6",
     "react": "^19.0.0",

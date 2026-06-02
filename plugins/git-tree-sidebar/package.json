@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "@pierre/trees": "1.0.0-beta.3",
-    "@zenbujs/core": "^0.2.0",
+    "@zenbujs/core": "^0.4.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

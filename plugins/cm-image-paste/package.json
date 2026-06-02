@@ -10,7 +10,7 @@
     "@codemirror/state": "^6.0.0",
     "@codemirror/view": "^6.0.0",
     "@zenbu/app": "workspace:*",
-    "@zenbujs/core": "^0.2.0",
+    "@zenbujs/core": "^0.4.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

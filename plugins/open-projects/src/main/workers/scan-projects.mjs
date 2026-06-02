@@ -100,6 +100,19 @@ const IGNORE_DIRS = new Set([
   "Library", // macOS
   "Applications", // macOS - .app bundles, not project folders
   "AppData", // Windows
+  // macOS TCC-protected user folders. Reading these triggers a
+  // privacy prompt ("Zenbu would like to access files in your
+  // Documents/Downloads/Desktop folder"). We never want to surface
+  // those prompts during a background index, so skip the folders
+  // entirely. Projects living under them won't be indexed, which is
+  // the intended trade-off.
+  "Documents", // macOS - TCC prompt
+  "Downloads", // macOS - TCC prompt
+  "Desktop", // macOS - TCC prompt
+  "Movies", // macOS - TCC prompt (Photos/media)
+  "Music", // macOS - TCC prompt
+  "Pictures", // macOS - TCC prompt
+  "Public", // macOS shared folder
 ])
 
 /**
