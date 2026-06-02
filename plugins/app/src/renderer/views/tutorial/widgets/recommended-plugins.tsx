@@ -83,6 +83,62 @@ const RECOMMENDED: RecommendedPlugin[] = [
   },
 ]
 
+/**
+ * Enable every recommended plugin with NO side effects: just flip the
+ * manifest rows on (idempotent), without revealing any surface or showing
+ * the per-plugin "Enable" reveal the tutorial widget does. Used when the
+ * user leaves onboarding (Skip tutorial / Open project / continue) without
+ * having toggled them by hand — we still want the core sidebars on.
+ *
+ * git-tree-sidebar is only enabled when git is actually installed, matching
+ * what the tutorial card shows.
+ */
+export async function enableRecommendedPluginsNoSideEffects(
+  rpc: ReturnType<typeof useRpc>,
+): Promise<void> {
+  let gitAvailable = true
+  try {
+    gitAvailable = await rpc.app.repos.isGitInstalled()
+  } catch {
+    gitAvailable = true // assume present on error, same as the widget
+  }
+
+  let rows: PluginManifestRow[]
+  try {
+    const raw = await rpc.core.pluginManager.list()
+    const parsed = pluginManagerListResponseSchema.safeParse(raw)
+    if (!parsed.success) return
+    rows = parsed.data.rows
+  } catch (err) {
+    console.error("[tutorial] enableRecommended: list failed:", err)
+    return
+  }
+
+  const wanted = new Set(
+    RECOMMENDED.filter(r =>
+      r.name === "git-tree-sidebar" ? gitAvailable : true,
+    ).map(r => r.name),
+  )
+
+  await Promise.all(
+    rows
+      .filter(
+        row =>
+          wanted.has(folderNameFromPluginPath(row.path)) && !row.enabled,
+      )
+      .map(row =>
+        rpc.core.pluginManager
+          .setEnabled({ path: row.path, enabled: true })
+          .catch((err: unknown) =>
+            console.error(
+              `[tutorial] enableRecommended: setEnabled(${row.path}) failed:`,
+              err,
+            ),
+          ),
+      ),
+  )
+}
+
 /** Card listing the core UI plugins with real enable/disable
  * toggles that also reveal each surface. */
 export function RecommendedPluginsWidget() {

@@ -23,6 +23,7 @@ import { PostTutorialPlaceholder } from "./post-tutorial-placeholder"
 import { QuestPrompt } from "./quest-prompt"
 import { SCRIPT } from "./script"
 import { Transcript } from "./transcript"
+import { enableRecommendedPluginsNoSideEffects } from "./widgets/recommended-plugins"
 import {
   QUESTION_PREFIX,
   WIDGET_PREFIX,
@@ -244,16 +245,28 @@ function TutorialBody() {
       // onboarding; they don't echo a bubble or advance the script.
       if (option.next === "openProject") {
         markOnboardingComplete()
-        // RPC (not event) because renderer `events.*.emit` is a no-op.
-        void rpc.openProjects.openProjects
-          .togglePalette({ windowId })
-          .catch(err =>
-            console.error("[tutorial] openProjects.togglePalette failed:", err),
-          )
+        // Make sure the core sidebars are on even if the user never
+        // toggled them in the recommended-plugins card. No reveal /
+        // notice side effects — just enable, then open the palette.
+        void (async () => {
+          await enableRecommendedPluginsNoSideEffects(rpc)
+          // RPC (not event) because renderer `events.*.emit` is a no-op.
+          await rpc.openProjects.openProjects
+            .togglePalette({ windowId })
+            .catch(err =>
+              console.error(
+                "[tutorial] openProjects.togglePalette failed:",
+                err,
+              ),
+            )
+        })()
         return
       }
       if (option.next === "continueSandbox") {
         markOnboardingComplete()
+        // Leaving onboarding: ensure the core sidebars are on (no
+        // reveal / notice side effects).
+        void enableRecommendedPluginsNoSideEffects(rpc)
         // New chat tab in the active pane (host's Cmd+T flow).
         void (async () => {
           // Wrapped in an object so TS doesn't narrow the
@@ -362,12 +375,14 @@ function TutorialBody() {
       clearTimeout(timerRef.current)
       timerRef.current = null
     }
+    // Skipping still turns the core sidebars on (no side effects).
+    void enableRecommendedPluginsNoSideEffects(rpc)
     setNodeId("skip-prompt")
     setItemIdx(0)
     setRevealedWords(0)
     setQuestOpen(false)
     setQuestionPhase("none")
-  }, [])
+  }, [rpc])
 
   const showSkipButton = !exited && nodeId !== "skip-prompt"
 
