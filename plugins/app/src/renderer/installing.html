@@ -140,17 +140,79 @@
           color: #fca5a5;
         }
       }
+      /* "Restart to launch" escape hatch. Hidden until the install has
+         clearly stalled (45s) or hard-failed. Calls
+         window.zenbuInstall.relaunch() to fully restart the app. */
+      .restart {
+        display: none;
+        -webkit-app-region: no-drag;
+        appearance: none;
+        border: 1px solid rgba(26, 26, 26, 0.18);
+        background: rgba(26, 26, 26, 0.04);
+        color: inherit;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 500;
+        padding: 6px 14px;
+        border-radius: 7px;
+        cursor: pointer;
+        transition: background 120ms ease;
+      }
+      .restart:hover { background: rgba(26, 26, 26, 0.09); }
+      .restart:active { background: rgba(26, 26, 26, 0.14); }
+      @media (prefers-color-scheme: dark) {
+        .restart {
+          border-color: rgba(237, 237, 237, 0.2);
+          background: rgba(237, 237, 237, 0.06);
+        }
+        .restart:hover { background: rgba(237, 237, 237, 0.12); }
+        .restart:active { background: rgba(237, 237, 237, 0.18); }
+      }
+      body[data-stalled="1"] .restart,
+      body[data-state="error"] .restart { display: inline-block; }
+      .hint {
+        display: none;
+        font-size: 11px;
+        color: rgba(26, 26, 26, 0.5);
+        margin-top: -8px;
+      }
+      @media (prefers-color-scheme: dark) {
+        .hint { color: rgba(237, 237, 237, 0.5); }
+      }
+      body[data-stalled="1"] .hint { display: block; }
     </style>
   </head>
   <body data-state="installing">
     <div class="drag-strip" aria-hidden="true"></div>
     <img class="icon" src="./icon.png" alt="" />
     <div class="label" id="label">Installing</div>
+    <div class="hint" id="hint">This is taking longer than usual.</div>
     <pre class="error" id="error"></pre>
+    <button class="restart" id="restart" type="button">Restart to launch</button>
 
     <script>
       const labelEl = document.getElementById("label");
       const errorEl = document.getElementById("error");
+      const restartEl = document.getElementById("restart");
+
+      const api = window.zenbuInstall;
+
+      // Restart button: relaunch the whole app so a hung clone/install is
+      // retried from scratch.
+      restartEl.addEventListener("click", () => {
+        restartEl.disabled = true;
+        restartEl.textContent = "Restarting…";
+        if (api && typeof api.relaunch === "function") api.relaunch();
+      });
+
+      // The niche cold-boot hang: if nothing has progressed past this screen
+      // after 45s, surface the restart button so the user isn't stuck.
+      const STALL_MS = 45000;
+      const stallTimer = setTimeout(() => {
+        if (document.body.dataset.state !== "error") {
+          document.body.dataset.stalled = "1";
+        }
+      }, STALL_MS);
 
       function showError(payload) {
         document.body.dataset.state = "error";
@@ -166,11 +228,13 @@
       // to see one shimmering "Installing" label until the splash takes
       // over, which usually happens in a few seconds. We only break the
       // shimmer if the launcher reports a hard failure, in which case the
-      // window stays open with the error message so it can be read /
-      // copied / screenshotted.
-      const api = window.zenbuInstall;
+      // window stays open with the error message (and the restart button) so
+      // it can be read / copied / screenshotted.
       if (api) {
-        api.on("error", (p) => showError(p || {}));
+        api.on("error", (p) => {
+          clearTimeout(stallTimer);
+          showError(p || {});
+        });
       }
     </script>
   </body>

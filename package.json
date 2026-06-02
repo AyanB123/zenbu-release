@@ -1,6 +1,6 @@
 {
   "name": "zenbu",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "private": true,
   "type": "module",
   "main": "node_modules/@zenbujs/core/dist/setup-gate.mjs",
@@ -19,7 +19,7 @@
     "release:signed": "bash scripts/release-signed.sh"
   },
   "dependencies": {
-    "@zenbujs/core": "0.4.0"
+    "@zenbujs/core": "0.4.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
