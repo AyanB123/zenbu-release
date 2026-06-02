@@ -63,22 +63,22 @@ type RecommendedPlugin = {
 const RECOMMENDED: RecommendedPlugin[] = [
   {
     name: "agent-sidebar",
-    tagline: "Chat list in the left sidebar",
+    tagline: "Manage agents and worktrees",
     reveal: { surface: "left", viewName: "agent" },
   },
   {
     name: "context-sidebar",
-    tagline: "Context surface in the right sidebar",
+    tagline: "View and manage your agent's context",
     reveal: { surface: "right", viewName: "context-sidebar" },
   },
   {
     name: "file-tree-sidebar",
-    tagline: "File tree in the right sidebar",
+    tagline: "View files, folders, and open them inside Zenbu",
     reveal: { surface: "right", viewName: "file-tree-sidebar" },
   },
   {
     name: "git-tree-sidebar",
-    tagline: "Diff + commit pane in the right sidebar",
+    tagline: "View changed files and their diffs",
     reveal: { surface: "right", viewName: "git-tree-sidebar" },
   },
 ]
