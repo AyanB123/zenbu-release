@@ -15,7 +15,7 @@ export type PullRequestsViewMode = "create" | "list" | "detail"
 
 export type PullRequestsViewArgs = {
   directory?: string | null
-  /** Which sub-page the iframe should mount on first load. */
+  /** Which sub-page the injection should mount on first load. */
   mode?: PullRequestsViewMode
   /** Required when `mode === "detail"`. */
   prNumber?: number

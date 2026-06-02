@@ -1,11 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Service } from "@zenbujs/core/runtime";
-import {
-  RendererHostService,
-  RpcService,
-  ViewRegistryService,
-} from "@zenbujs/core/services";
+import { RpcService } from "@zenbujs/core/services";
 
 // TODO(cross-plugin-deps): zenbu's `deps:` accepts either a service
 // class reference or a service key string. We use the string form
@@ -18,11 +14,8 @@ import {
 // `"piExtensionRegistry"` with the real class import and drop the
 // `any` cast in `evaluate()`.
 
-// Resolve paths inside this plugin so they survive both `zen dev`
-// (source tree) and the staged source bundle produced by
-// `zen build:source` (mirror tree). Both keep the same relative
-// layout under the plugin package, so deriving from `import.meta.url`
-// is stable.
+// The Pi extension path must still be absolute — it's handed to
+// Pi's SDK at session activation, which expects an OS path.
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PLAN_EXTENSION_PATH = path.resolve(here, "../../extension/index.ts");
 
@@ -69,11 +62,7 @@ export class PlanService extends Service.create({
     // String-keyed dep on the host's PiExtensionRegistryService.
     // See the TODO above for why this isn't a class import.
     piExtensionRegistry: "piExtensionRegistry",
-    viewRegistry: ViewRegistryService,
     rpc: RpcService,
-    // Order-only: registering a view that should be reachable from
-    // the host renderer needs the renderer host alive first.
-    rendererHost: RendererHostService,
   },
 }) {
   evaluate() {
@@ -95,14 +84,11 @@ export class PlanService extends Service.create({
     // mounted directly into the host renderer's React tree. Streamdown
     // is loaded from this plugin's node_modules via Node module
     // resolution starting from `plan-app.tsx`'s location.
-    this.setup("register-view", () =>
-      this.registerView({
-        type: "plan",
-        rendering: "component",
-        source: {
-          modulePath: "src/views/plan/plan-app.tsx",
-          exportName: "PlanApp",
-        },
+    this.setup("inject-view", () =>
+      this.inject({
+        name: "plan",
+        modulePath: "./src/views/plan/plan-app.tsx",
+        exportName: "PlanApp",
         // `kind: "embed"` keeps the view out of the command palette
         // (it requires args to be meaningful); other code reaches it
         // via the generic `openViewInActivePane` event.
@@ -118,11 +104,10 @@ export class PlanService extends Service.create({
     // pointing at the right value when it detects a mismatch.
     this.setup("advise-tool-call", () =>
       this.advise({
-        view: "*",
         moduleId: "components/chat/messages/tool-call.tsx",
         name: "ToolCall",
         type: "around",
-        modulePath: "src/content/plan-tool-advice.tsx",
+        modulePath: "./src/content/plan-tool-advice.tsx",
         exportName: "PlanToolAdvice",
       }),
     );

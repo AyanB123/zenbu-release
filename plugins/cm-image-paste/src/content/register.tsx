@@ -2,7 +2,7 @@ import { StrictMode, useEffect } from "react"
 import { createRoot } from "react-dom/client"
 import {
   useDbClient,
-  useRegisterFunction,
+  useRegisterInjection,
   ZenbuProvider,
 } from "@zenbujs/core/react"
 import imagePasteExtension from "../extension"
@@ -33,7 +33,7 @@ function Registrar() {
   // pastes, so there's no reason to install the paste handler
   // there. The host composer filters this kind out when `readOnly`
   // is true.
-  useRegisterFunction(
+  useRegisterInjection(
     "cm-image-paste.paste",
     imagePasteExtension,
     { kind: "cm.composer-extension-editable", label: "Image paste" },

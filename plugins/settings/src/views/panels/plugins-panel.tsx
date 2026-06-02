@@ -246,7 +246,7 @@ export function PluginsPanel() {
           ) : activeSection ? (
             activeSection.body.kind === "view" ? (
               <View
-                type={activeSection.body.viewType}
+                name={activeSection.body.viewType}
                 args={{ sectionId: activeSection.id }}
                 className="size-full"
                 fallback={

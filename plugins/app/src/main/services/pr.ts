@@ -2,8 +2,6 @@ import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { Service } from "@zenbujs/core/runtime"
 import {
-  RendererHostService,
-  ViewRegistryService,
 } from "@zenbujs/core/services"
 
 const execFileP = promisify(execFile)
@@ -81,8 +79,6 @@ export type GitBranch = {
 export class PrService extends Service.create({
   key: "pr",
   deps: {
-    viewRegistry: ViewRegistryService,
-    rendererHost: RendererHostService,
   },
 }) {
   evaluate() {
@@ -93,13 +89,10 @@ export class PrService extends Service.create({
     // of `pr` shouldn't surface this view (the new `pull-requests`
     // view is the one that actually belongs to PR work).
     this.setup("register-view", () =>
-      this.registerView({
-        type: "git",
-        rendering: "component",
-        source: {
-          modulePath: "src/renderer/views/pr/pr-app.tsx",
-          exportName: "PrApp",
-        },
+      this.inject({
+        name: "git",
+        modulePath: "src/renderer/views/pr/pr-app.tsx",
+        exportName: "PrApp",
         meta: { kind: "view", label: "Git" },
       }),
     )

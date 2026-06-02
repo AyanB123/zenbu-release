@@ -44,7 +44,15 @@ export default function ContextSidebarView({
   args,
 }: ViewComponentProps<ContextSidebarArgs>) {
   const windowId = args?.windowId ?? null;
+  // Onboarding special-case: while the tutorial view is active
+  // there's no real session, so render a fake context pane.
+  // Both hooks run unconditionally to keep hook order stable.
+  const tutorialActive = useTutorialViewActive(windowId);
   const active = useActiveChat(windowId);
+
+  if (tutorialActive) {
+    return <OnboardingContextPane directory={args?.directory ?? null} />;
+  }
 
   if (!active.sessionId) {
     return (
@@ -60,6 +68,91 @@ export default function ContextSidebarView({
       sessionId={active.sessionId}
       scopeId={active.scopeId}
     />
+  );
+}
+
+/* ---------------------- onboarding (fake) pane -------------------------- */
+
+/** True when the active tab is the `tutorial` view. */
+function useTutorialViewActive(windowId: string | null): boolean {
+  return useDb((root) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const windows = root.app.windowStates as Record<string, any>;
+    const ws = windowId ? windows[windowId] : null;
+    if (!ws || ws.activeView?.kind !== "workspace") return false;
+    const scopeId = ws.selectedScopeId as string | null;
+    const paneState = scopeId ? ws.scopePanes?.[scopeId] : null;
+    if (!paneState) return false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const activePane =
+      paneState.panes.find((p: any) => p.id === paneState.activePaneId) ??
+      paneState.panes[0];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const activeTab =
+      activePane?.tabs.find((t: any) => t.id === activePane.activeTabId) ??
+      activePane?.tabs[0];
+    const content = activeTab?.content;
+    return content?.kind === "view" && content.viewType === "tutorial";
+  });
+}
+
+/**
+ * Fake "onboarding agent" context pane. Reuses the real
+ * `Header` / `Grid` / `SessionFooter` with a hardcoded session
+ * so the surface looks live while the tutorial introduces it.
+ */
+function OnboardingContextPane({ directory }: { directory: string | null }) {
+  const fakeSession: SessionLike = {
+    title: "Onboarding",
+    model: { provider: "zenbu", id: "guide" },
+    stats: {
+      contextUsage: { tokens: 18_432, percent: 9, contextWindow: 200_000 },
+      tokens: { input: 18_000, output: 432, cacheRead: 12_800, cacheWrite: 5_600 },
+      cost: 0,
+      autoCompactionEnabled: true,
+    },
+    leafCount: 1,
+    lastActivityAt: Date.now(),
+  };
+  const fakeModel: ModelLike = { name: "Zenbu Guide", contextWindow: 200_000 };
+
+  return (
+    <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-background text-foreground">
+      <Header session={fakeSession} model={fakeModel} />
+      <Grid session={fakeSession} model={fakeModel} />
+      <div className="mt-auto">
+        <OnboardingFolders directory={directory} />
+        <SessionFooter session={fakeSession} />
+      </div>
+    </div>
+  );
+}
+
+/** Read-only folders list for the fake onboarding pane. */
+function OnboardingFolders({ directory }: { directory: string | null }) {
+  const homeDir = useDb((root) => root.app.env.homeDir);
+  const display = (p: string): string =>
+    homeDir && p.startsWith(homeDir + "/") ? "~" + p.slice(homeDir.length) : p;
+  const rows = directory
+    ? [directory, `${directory}/greetings`]
+    : ["~/zenbu-playground", "~/zenbu-playground/greetings"];
+  return (
+    <div className="border-t border-border px-3 py-3">
+      <div className="mb-1.5 truncate text-[11px] text-muted-foreground">
+        Folders in context
+      </div>
+      <div className="flex min-w-0 flex-col gap-1">
+        {rows.map((p) => (
+          <div
+            key={p}
+            className="truncate font-mono text-[11.5px] text-foreground/80"
+            title={p}
+          >
+            {display(p)}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

@@ -48,7 +48,7 @@ function WorkspaceRailPaneBody() {
             {railViews.map(v => (
               <View
                 key={v.type}
-                type={v.type}
+                name={v.type}
                 args={{}}
                 fallback={null}
               />

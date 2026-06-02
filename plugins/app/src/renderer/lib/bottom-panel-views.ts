@@ -1,56 +1,40 @@
 import { useMemo } from "react"
-import { useDb } from "@zenbujs/core/react"
+import { useInjections } from "@zenbujs/core/react"
 
 export type BottomPanelViewEntry = {
-  /** Registered view type (e.g. `"terminal"`). Used as the tab key. */
+  /** Injection name (used as the tab key + `<View name=>` lookup). */
   type: string
   label: string
   iconSvg?: string
 }
 
-type RegistryEntry = {
-  type: string
-  url: string
-  port: number
-  icon?: string
-  meta?: {
-    kind?: string
-    bottomPanel?: boolean
-    label?: string
-  }
-}
-
 /**
- * Every view in the view registry tagged `meta.bottomPanel === true`.
- * The host shell renders one of these at a time inside the bottom
- * panel (analogous to `useSidebarViews` for the right sidebar).
+ * Every injection tagged `meta.kind: "bottom-panel"`. The host
+ * shell renders one of these at a time inside the bottom panel
+ * (analogous to `useSidebarViews` for the right sidebar).
  *
- * Plugins opt-in by passing `meta: { bottomPanel: true, label: "\u2026" }`
- * to `viewRegistry.registerView()`. The order in the registry is
- * stable, so the first registered view doubles as the default
- * selection when a window has no `bottomPanelView` set.
+ * Plugins opt in by passing `meta: { kind: "bottom-panel", label }`
+ * to `this.inject(...)`. The order in the registry is stable, so
+ * the first registered injection doubles as the default selection
+ * when a window has no `bottomPanelView` set.
  */
 export function useBottomPanelViews(): BottomPanelViewEntry[] {
-  const registry = useDb(
-    root => root.core.lastKnownViewRegistry ?? [],
-  ) as RegistryEntry[]
+  const entries = useInjections({ kind: "bottom-panel" })
 
   return useMemo<BottomPanelViewEntry[]>(() => {
-    const out: BottomPanelViewEntry[] = []
-    for (const entry of registry) {
-      if (entry.meta?.kind === "entrypoint") continue
-      if (entry.meta?.bottomPanel !== true) continue
-      out.push({
-        type: entry.type,
-        label: entry.meta?.label ?? formatLabel(entry.type),
-        iconSvg: entry.icon,
-      })
-    }
-    return out
-  }, [registry])
+    return entries.map(entry => ({
+      type: entry.name,
+      label:
+        typeof entry.meta?.label === "string"
+          ? entry.meta.label
+          : formatLabel(entry.name),
+      iconSvg:
+        typeof entry.meta?.icon === "string" ? entry.meta.icon : undefined,
+    }))
+  }, [entries])
 }
 
-function formatLabel(type: string): string {
-  const tail = type.includes("/") ? type.split("/").pop()! : type
+function formatLabel(name: string): string {
+  const tail = name.includes("/") ? name.split("/").pop()! : name
   return tail.replace(/[-_]/g, " ")
 }

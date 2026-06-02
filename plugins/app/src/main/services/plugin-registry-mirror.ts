@@ -207,7 +207,7 @@ export class PluginRegistryMirrorService extends Service.create({
     this.setup("mirror-plugin-registry", () => {
       const unsubscribe = subscribeConfig(snapshot => {
         void this.syncFromSnapshot(snapshot)
-      })
+      }, "app/plugin-registry-mirror")
       // Belt-and-braces: drive one extra sync from the current
       // snapshot in case anything raced.
       void this.syncFromSnapshot(getConfig())

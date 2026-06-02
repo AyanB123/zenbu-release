@@ -1,0 +1,22 @@
+{
+  "id": "bfc396c0-4d39-4a20-a032-6b605e0a7f88",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "fields": {
+    "index": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "e6d6f989cd3ccc71",
+      "default": {
+        "projects": {
+          "collectionId": "",
+          "debugName": "open-projects"
+        },
+        "status": "idle",
+        "count": 0,
+        "indexedAt": 0,
+        "truncated": false,
+        "error": null
+      }
+    }
+  }
+}

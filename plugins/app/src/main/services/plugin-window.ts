@@ -106,8 +106,7 @@ export class PluginsRootViewService extends Service.create({
         }
       : {}
 
-    return this.ctx.window.openView({
-      type: "entrypoint",
+    return this.ctx.window.openWindow({
       windowId: newWindowId,
       query: { skeletonRoute: skeletonRouteForActiveView(activeView) },
       baseWindow: {
@@ -173,6 +172,7 @@ export class PluginsRootViewService extends Service.create({
         archived: false,
         kind: "plugin",
         defaultWorktreeBranch: null,
+        playground: false,
       }
       root.app.scopes[scopeId] = {
         id: scopeId,

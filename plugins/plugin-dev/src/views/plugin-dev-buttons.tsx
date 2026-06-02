@@ -58,7 +58,7 @@ type TitleBarViewArgs = {
  *     pill in the header (Running / Exited / Errored).
  *  3. **Install Plugin** \u2014 split button with `installLocal` +
  *     an `(i)` popover explaining what installation does. Writes
- *     into the user's local `zenbu.local.ts` overlay (not the
+ *     into the user's local `zenbu.plugins.local.jsonc` overlay (not the
  *     shared `zenbu.config.ts`). Toasts on result.
  */
 export default function PluginDevButtons({
@@ -137,7 +137,7 @@ export default function PluginDevButtons({
         pluginPath: pluginDir,
       })
       toast.success("Plugin installed", {
-        description: `Added to ${result.projectDir}/zenbu.local.ts`,
+        description: `Added to ${result.projectDir}/zenbu.plugins.local.jsonc`,
       })
     } catch (err) {
       toast.error("Install failed", {
@@ -158,6 +158,7 @@ export default function PluginDevButtons({
     <div className="inline-flex items-center gap-1.5">
       {/* Run in Dev split: [Run | chevron-opens-logs] */}
       <div
+        data-onboarding-target="run-in-dev"
         className={cn(
           "inline-flex h-[22px] items-stretch overflow-hidden rounded-md border border-border bg-background/40",
           "transition-colors hover:bg-background/70",
@@ -223,13 +224,14 @@ export default function PluginDevButtons({
 
       {/* Install split: [Install | info popover] */}
       <div
+        data-onboarding-target="install-plugin"
         className={cn(
           "inline-flex h-[22px] items-stretch overflow-hidden rounded-md border border-border bg-background/40",
           "transition-colors hover:bg-background/70",
         )}
       >
         <HoverTip
-          label="Install into your local zenbu config (zenbu.local.ts)"
+          label="Install into your local zenbu config (zenbu.plugins.local.jsonc)"
           setAriaLabel={false}
         >
           <button
@@ -273,7 +275,7 @@ export default function PluginDevButtons({
             <p className="mt-1 text-muted-foreground">
               This adds the plugin to your{" "}
               <span className="font-medium text-foreground">
-                zenbu.local.ts
+                zenbu.plugins.local.jsonc
               </span>{" "}
               overlay \u2014 a local-only config that layers on top of{" "}
               <span className="font-medium text-foreground">

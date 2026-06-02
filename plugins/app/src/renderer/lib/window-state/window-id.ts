@@ -2,8 +2,8 @@ import { useDb } from "@zenbujs/core/react"
 
 const DEFAULT_WINDOW_ID = "main"
 
-/** `WindowService.openView` stamps `?windowId=<id>` into the iframe
- * URL; legacy / test mounts fall back to "main". */
+/** `WindowService.openWindow` stamps `?windowId=<id>` into each
+ * BrowserWindow's URL; legacy / test mounts fall back to "main". */
 function readWindowIdFromUrl(): string {
   if (typeof window === "undefined") return DEFAULT_WINDOW_ID
   const fromUrl = new URLSearchParams(window.location.search).get("windowId")

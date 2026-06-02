@@ -1,6 +1,12 @@
 import { Activity, useCallback, useEffect, useMemo, useRef } from "react"
 import { nanoid } from "nanoid"
-import { View, useDb, useDbClient, useRpc } from "@zenbujs/core/react"
+import {
+  View,
+  useDb,
+  useDbClient,
+  useInjections,
+  useRpc,
+} from "@zenbujs/core/react"
 import type { Schema } from "../../../main/schema"
 import { ChatPane } from "../chat/chat-pane"
 import { PaneFrame } from "./pane-frame"
@@ -45,7 +51,7 @@ export function ChatPaneContainer({
 }: ChatPaneContainerProps) {
   const chatsById = useDb(root => root.app.chats)
   const sessionsById = useDb(root => root.app.sessions)
-  const viewRegistry = useDb(root => root.core.lastKnownViewRegistry ?? [])
+  const injections = useInjections()
 
   const activeTab = useMemo<PaneTabView | null>(
     () =>
@@ -65,10 +71,11 @@ export function ChatPaneContainer({
 
   const viewLabelFor = useCallback(
     (viewType: string): string => {
-      const entry = viewRegistry.find(v => v.type === viewType)
-      return entry?.meta?.label ?? formatLabel(viewType)
+      const entry = injections.find(v => v.name === viewType)
+      const label = entry?.meta?.label
+      return typeof label === "string" ? label : formatLabel(viewType)
     },
-    [viewRegistry],
+    [injections],
   )
 
   const tabEntries = useMemo<ChatTabEntry[]>(
@@ -377,7 +384,7 @@ function TabPanel({
             leftAdjacent
           >
             <View
-              type={tab.content.viewType}
+              name={tab.content.viewType}
               args={cloneViewArgs(tab.content.args)}
               className="size-full"
               fallback={

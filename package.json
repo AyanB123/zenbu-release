@@ -1,6 +1,6 @@
 {
   "name": "zenbu",
-  "version": "0.0.4",
+  "version": "0.0.6",
   "private": true,
   "type": "module",
   "main": "node_modules/@zenbujs/core/dist/setup-gate.mjs",
@@ -18,7 +18,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@zenbujs/core": "0.2.3"
+    "@zenbujs/core": "0.4.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

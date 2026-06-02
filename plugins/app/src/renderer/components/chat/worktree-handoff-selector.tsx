@@ -410,6 +410,7 @@ export function WorktreeHandoffSelector({
           kind: "askMove",
           target: s.target,
           sourceBranch: s.sourceBranch,
+          cursor: 0,
         })
         return
       }

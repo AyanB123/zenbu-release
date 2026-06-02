@@ -2,9 +2,7 @@ import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { Service } from "@zenbujs/core/runtime"
 import {
-  RendererHostService,
   RpcService,
-  ViewRegistryService,
 } from "@zenbujs/core/services"
 import { resolveSmallModel } from "../summaries/resolve-model"
 import { complete, type Context } from "@earendil-works/pi-ai"
@@ -108,8 +106,6 @@ type Result<T> = Ok<T> | Err
 export class GithubService extends Service.create({
   key: "github",
   deps: {
-    viewRegistry: ViewRegistryService,
-    rendererHost: RendererHostService,
     // Needed so we can emit `openPullRequestsView` from the RPC
     // method the command palette / chat advice calls when the user
     // runs `/create pr` / `/pr` / `/tree`.
@@ -134,16 +130,11 @@ export class GithubService extends Service.create({
   >()
 
   evaluate() {
-    // Order-only: `registerView({ source: { pathPrefix } })` needs the renderer's vite
-    // server to already be live, which `RendererHostService` ensures.
     this.setup("register-pull-requests-view", () =>
-      this.registerView({
-        type: "pull-requests",
-        rendering: "component",
-        source: {
-          modulePath: "src/renderer/views/pull-requests/pull-requests-app.tsx",
-          exportName: "PullRequestsApp",
-        },
+      this.inject({
+        name: "pull-requests",
+        modulePath: "src/renderer/views/pull-requests/pull-requests-app.tsx",
+        exportName: "PullRequestsApp",
         meta: { kind: "view", label: "Pull Requests" },
       }),
     )

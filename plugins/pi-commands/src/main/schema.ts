@@ -1,4 +1,5 @@
 import { createSchema, z } from "@zenbujs/core/db"
+import type { z as zType } from "zod"
 
 /**
  * pi-commands plugin schema.
@@ -44,7 +45,7 @@ export const PiCommandPanel = z.discriminatedUnion("kind", [
   ForkPanel,
 ])
 
-export type PiCommandPanel = z.infer<typeof PiCommandPanel>
+export type PiCommandPanel = zType.infer<typeof PiCommandPanel>
 
 export default createSchema({
   panels: z.record(z.string(), PiCommandPanel).default({}),

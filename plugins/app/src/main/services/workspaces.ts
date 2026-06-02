@@ -93,15 +93,16 @@ export class WorkspacesService extends Service.create({
         workspaceActiveScope: selectedScopeId
           ? { [args.workspaceId]: selectedScopeId }
           : {},
-        workspaceRailOpen: true,
+        // Rail off by default; the user opts in via ⌘⇧B.
+        workspaceRailOpen: false,
         workspaceUiStates: {},
         scopeUiStates: {},
         pluginsView: { selectedPluginName: null, sidebarOpen: true },
+        fullscreen: false,
       }
     })
 
-    return this.ctx.window.openView({
-      type: "entrypoint",
+    return this.ctx.window.openWindow({
       windowId: newWindowId,
       query: { skeletonRoute: skeletonRouteForActiveView(activeView) },
       baseWindow: {
@@ -201,6 +202,7 @@ export class WorkspacesService extends Service.create({
         archived: false,
         kind: "default",
         defaultWorktreeBranch: null,
+        playground: false,
       }
       root.app.scopes[scopeId] = {
         id: scopeId,
@@ -241,7 +243,6 @@ export class WorkspacesService extends Service.create({
               {
                 id: tabId,
                 content: initialContent,
-                history: { entries: [initialContent], index: 0 },
               },
             ],
             activeTabId: tabId,
@@ -334,9 +335,10 @@ function ensureWindowState(
     activeView: { kind: "onboarding" },
     scopePanes: {},
     workspaceActiveScope: {},
-    workspaceRailOpen: true,
+    workspaceRailOpen: false,
     workspaceUiStates: {},
     scopeUiStates: {},
+    pluginsView: { selectedPluginName: null, sidebarOpen: true },
     fullscreen: false,
   }
   root.app.windowStates[windowId] = fresh

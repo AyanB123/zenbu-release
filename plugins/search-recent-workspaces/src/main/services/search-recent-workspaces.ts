@@ -98,9 +98,9 @@ export class SearchRecentWorkspacesService extends Service.create({
     })
 
     this.setup("inject-palette", () =>
-      this.injectContentScript({
-        view: "entrypoint",
-        modulePath: "src/content/recent-workspaces-palette.tsx",
+      this.inject({
+        name: "searchRecentWorkspaces/palette",
+        modulePath: "./src/content/recent-workspaces-palette.tsx",
       }),
     )
   }

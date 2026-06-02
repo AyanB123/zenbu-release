@@ -185,6 +185,17 @@ export class ReposService extends Service.create({
     return { repoId }
   }
 
+  /** Whether the `git` binary is on PATH. */
+  async isGitInstalled(): Promise<boolean> {
+    try {
+      await execFileP("git", ["--version"])
+      return true
+    } catch (err) {
+      // Ambiguous (non-ENOENT) failures are treated as "present".
+      return !isGitMissing(err)
+    }
+  }
+
   /**
    * Initialize a fresh git repo at `directory`, lay down an
    * initial commit so `HEAD` resolves (worktrees require a
@@ -203,10 +214,15 @@ export class ReposService extends Service.create({
    */
   async initRepoAtDirectory(args: {
     directory: string
+    /** When false, skip staging so existing files stay untracked
+     * (the initial commit is empty, just to establish HEAD).
+     * Defaults to true. */
+    stageInitialFiles?: boolean
   }): Promise<
     | { ok: true; repoId: string }
     | { ok: false; error: string }
   > {
+    const stageInitialFiles = args.stageInitialFiles ?? true
     const directory = args.directory?.trim()
     if (!directory || !path.isAbsolute(directory)) {
       return { ok: false, error: "absolute directory required" }
@@ -243,11 +259,13 @@ export class ReposService extends Service.create({
       // first commit. `--allow-empty` covers the freshly-created
       // project case (no files yet); worktree creation needs a
       // reachable HEAD either way.
-      try {
-        await execFileP("git", ["-C", directory, "add", "-A"])
-      } catch {
-        // Best-effort — a missing `.gitignore` etc. shouldn't
-        // block the initial commit.
+      if (stageInitialFiles) {
+        try {
+          await execFileP("git", ["-C", directory, "add", "-A"])
+        } catch {
+          // Best-effort — a missing `.gitignore` etc. shouldn't
+          // block the initial commit.
+        }
       }
       const identityArgs = await this.fallbackIdentityArgs(directory)
       try {

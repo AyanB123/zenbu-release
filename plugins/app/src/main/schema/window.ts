@@ -129,8 +129,9 @@ export const windowState = z.object({
   /** Per-workspace memory of which scope was last active. */
   workspaceActiveScope: z.record(z.string(), z.string()).default({}),
   /** Whether the workspace rail is visible. Toggled with ⌘⇧B.
-   * Window-scoped because the rail shows all workspaces. */
-  workspaceRailOpen: z.boolean().default(true),
+   * Window-scoped because the rail shows all workspaces. Off by
+   * default — the user opts in. */
+  workspaceRailOpen: z.boolean().default(false),
   workspaceUiStates: z.record(z.string(), workspaceUiState).default({}),
   scopeUiStates: z.record(z.string(), scopeUiState).default({}),
   /** Plugins-root-view state (selection + sidebar open). Used

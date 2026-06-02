@@ -2,6 +2,7 @@ import {
   StrictMode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
 } from "react"
@@ -14,11 +15,14 @@ import { useDb, useRpc, ZenbuProvider } from "@zenbujs/core/react"
  * Renders three things into every entrypoint window, all gated on
  * cheap reads so a normal workspace window pays close to zero:
  *
- *  1. **Plugin workspace modal** \u2014 one-time popover that fires
- *     when the user opens a window whose active scope is tagged
- *     with `pluginName` (the marketplace-spawned "Open in
- *     Workspace" path). Explains what this window is for. Has a
- *     "Don't show again" toggle persisted via the plugin-dev
+ *  1. **Plugin workspace tour** \u2014 one-time two-step walkthrough
+ *     that fires when the user opens a window whose active scope is
+ *     tagged with `pluginName` (the marketplace-spawned "Create
+ *     Plugin" path). Because the plugin-workspace concept is
+ *     confusing on a first encounter, it dims the live app, cuts a
+ *     spotlight around the real title-bar controls, and points a
+ *     short explainer bubble at each one. "Don't show again" only
+ *     appears on the final step, persisted via the plugin-dev
  *     service's prefs file.
  *
  *  2. **Plugin dev modal** \u2014 fires once when the host boots as
@@ -139,9 +143,8 @@ function PluginDevSurface() {
         />
       )}
       {showWorkspaceModal && (
-        <OnboardingModal
-          title="Plugin workspace"
-          body="This is your editing space for the plugin. Use the buttons in the title bar to test it and to install it into your main app."
+        <OnScreenTour
+          steps={WORKSPACE_STEPS}
           onClose={() =>
             setSessionClosed(s => ({ ...s, workspace: true }))
           }
@@ -151,6 +154,35 @@ function PluginDevSurface() {
     </>
   )
 }
+
+// ---------------------------------------------------------------------------
+// Step content
+
+type OnboardingTarget = "run-in-dev" | "install-plugin"
+
+type WorkspaceTourStep = {
+  eyebrow: string
+  title: string
+  body: string
+  target: OnboardingTarget
+}
+
+const WORKSPACE_STEPS: WorkspaceTourStep[] = [
+  {
+    eyebrow: "Step 1 of 2",
+    title: "Run it safely",
+    body:
+      "This button launches your plugin in an isolated copy of the app, so you can try changes without affecting your main workspace.",
+    target: "run-in-dev",
+  },
+  {
+    eyebrow: "Step 2 of 2",
+    title: "Install when it works",
+    body:
+      "When you're happy with the test run, install the plugin into your local Zenbu config from here.",
+    target: "install-plugin",
+  },
+]
 
 // ---------------------------------------------------------------------------
 // Visual chrome
@@ -256,6 +288,464 @@ function OnboardingModal({
       </div>
     </div>
   )
+}
+
+function cnDots(active: boolean): string {
+  return [
+    "h-1.5 rounded-full transition-all duration-200",
+    active ? "w-4 bg-primary" : "w-1.5 bg-muted-foreground/30",
+  ].join(" ")
+}
+
+type TourRect = {
+  top: number
+  left: number
+  width: number
+  height: number
+}
+
+const TOUR_TARGET_STYLE_ID = "plugin-dev-tour-target-style"
+
+function useTargetRect(
+  target: OnboardingTarget,
+  active: boolean,
+): TourRect | null {
+  const [rectState, setRectState] = useState<{
+    target: OnboardingTarget
+    rect: TourRect | null
+  } | null>(null)
+
+  useLayoutEffect(() => {
+    if (!active) return
+
+    setRectState(current =>
+      current?.target === target ? current : { target, rect: null },
+    )
+    let activeEl: HTMLElement | null = null
+    let frame = 0
+    const selector = `[data-onboarding-target="${target}"]`
+
+    const style = document.createElement("style")
+    style.id = TOUR_TARGET_STYLE_ID
+    style.textContent = `
+      [data-plugin-dev-tour-active="true"] {
+        position: relative !important;
+        z-index: 2147483646 !important;
+        isolation: isolate;
+        outline: 1px solid var(--ring) !important;
+        outline-offset: 2px;
+        box-shadow:
+          0 0 0 4px var(--background),
+          0 0 0 5px var(--border),
+          0 10px 28px rgb(0 0 0 / 0.22) !important;
+      }
+    `
+    document.head.appendChild(style)
+
+    const clearActive = () => {
+      if (!activeEl) return
+      activeEl.removeAttribute("data-plugin-dev-tour-active")
+      activeEl = null
+    }
+
+    const measure = () => {
+      const candidates = Array.from(
+        document.querySelectorAll<HTMLElement>(selector),
+      )
+      const visible = candidates
+        .map(el => ({ el, rect: el.getBoundingClientRect() }))
+        .filter(({ rect }) =>
+          rect.width > 0 &&
+          rect.height > 0 &&
+          rect.bottom > 0 &&
+          rect.right > 0 &&
+          rect.top < window.innerHeight &&
+          rect.left < window.innerWidth,
+        )
+        .sort(
+          (a, b) =>
+            b.rect.width * b.rect.height - a.rect.width * a.rect.height,
+        )
+
+      const next = visible[0]
+      if (!next) {
+        clearActive()
+        setRectState({ target, rect: null })
+        return
+      }
+
+      if (activeEl !== next.el) {
+        clearActive()
+        activeEl = next.el
+        activeEl.setAttribute("data-plugin-dev-tour-active", "true")
+      }
+
+      setRectState({
+        target,
+        rect: {
+          top: Math.round(next.rect.top),
+          left: Math.round(next.rect.left),
+          width: Math.round(next.rect.width),
+          height: Math.round(next.rect.height),
+        },
+      })
+    }
+
+    const schedule = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(measure)
+    }
+
+    measure()
+    window.addEventListener("resize", schedule)
+    window.addEventListener("scroll", schedule, true)
+    const observer = new ResizeObserver(schedule)
+    observer.observe(document.body)
+    const id = window.setInterval(measure, 250)
+    return () => {
+      clearActive()
+      style.remove()
+      observer.disconnect()
+      cancelAnimationFrame(frame)
+      window.removeEventListener("resize", schedule)
+      window.removeEventListener("scroll", schedule, true)
+      window.clearInterval(id)
+    }
+  }, [active, target])
+
+  return rectState?.target === target ? rectState.rect : null
+}
+
+/**
+ * On-screen product tour for the plugin workspace. It dims the app around the
+ * real title-bar control, keeps that control undimmed, and points a short
+ * callout at it.
+ */
+function OnScreenTour({
+  steps,
+  onClose,
+  onDismissForever,
+}: {
+  steps: WorkspaceTourStep[]
+  onClose: () => void
+  onDismissForever: () => void
+}) {
+  const [index, setIndex] = useState(0)
+  const [entered, setEntered] = useState(false)
+  const step = steps[index]!
+  const isLast = index === steps.length - 1
+  const targetRect = useTargetRect(step.target, true)
+
+  useEffect(() => {
+    if (!targetRect || entered) return
+    const id = requestAnimationFrame(() => setEntered(true))
+    return () => cancelAnimationFrame(id)
+  }, [entered, targetRect])
+
+  const handleDismissForever = useCallback(() => {
+    onClose()
+    onDismissForever()
+  }, [onClose, onDismissForever])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isLast) onClose()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [isLast, onClose])
+
+  if (!targetRect) return null
+
+  const bubble = getBubblePosition(targetRect)
+  const targetPoint = getTargetEdgePoint(targetRect, bubble.side, step.target)
+  const bubblePoint = getBubbleEdgePoint(bubble, step.target)
+  const arrowPath = getArrowPath(bubblePoint, targetPoint)
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={step.title}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 2147483647,
+        pointerEvents: "none",
+      }}
+    >
+      <Backdrop rect={targetRect} />
+
+      {targetRect && (
+        <svg
+          aria-hidden
+          className="pointer-events-none fixed inset-0 text-muted-foreground"
+          style={{
+            zIndex: 2,
+            width: "100vw",
+            height: "100vh",
+            overflow: "visible",
+            opacity: entered ? 1 : 0,
+            transition:
+              "opacity 220ms ease-out",
+          }}
+        >
+          <path
+            d={arrowPath}
+            fill="none"
+            stroke="var(--background)"
+            strokeWidth="5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{
+              transition: "d 420ms cubic-bezier(0.22, 1, 0.36, 1)",
+            }}
+          />
+          <path
+            d={arrowPath}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity="0.82"
+            style={{
+              transition: "d 420ms cubic-bezier(0.22, 1, 0.36, 1)",
+            }}
+          />
+          <ArrowHead from={bubblePoint} to={targetPoint} />
+        </svg>
+      )}
+
+      <div
+        className="rounded-xl border border-border bg-background p-4 shadow-2xl"
+        style={{
+          position: "fixed",
+          zIndex: 3,
+          pointerEvents: "auto",
+          left: bubble.left,
+          top: bubble.top,
+          width: bubble.width,
+          maxWidth: "calc(100vw - 32px)",
+          opacity: entered ? 1 : 0,
+          transform: entered ? "translateY(0) scale(1)" : "translateY(-6px) scale(0.98)",
+          transition:
+            "left 420ms cubic-bezier(0.22, 1, 0.36, 1), top 420ms cubic-bezier(0.22, 1, 0.36, 1), opacity 220ms ease-out, transform 220ms ease-out",
+        }}
+      >
+        {step.eyebrow && (
+          <div className="text-[12px] font-medium text-primary">
+            {step.eyebrow}
+          </div>
+        )}
+        <div className="mt-1 text-[15px] font-semibold text-foreground">
+          {step.title}
+        </div>
+        <p className="mt-2 h-[76px] text-[12.5px] leading-relaxed text-muted-foreground">
+          {step.body}
+        </p>
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <div className="flex shrink-0 items-center gap-1.5">
+            {steps.map((_, i) => (
+              <span key={i} aria-hidden className={cnDots(i === index)} />
+            ))}
+          </div>
+          <div className="flex min-w-0 items-center justify-end gap-2">
+            {isLast && (
+              <button
+                type="button"
+                onClick={handleDismissForever}
+                className="whitespace-nowrap text-[11.5px] text-muted-foreground hover:text-foreground"
+              >
+                Don&apos;t show again
+              </button>
+            )}
+            {index > 0 && (
+              <button
+                type="button"
+                onClick={() => setIndex(i => Math.max(0, i - 1))}
+                className="rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground hover:text-foreground"
+              >
+                Back
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                if (isLast) onClose()
+                else setIndex(i => i + 1)
+              }}
+              className="min-w-[80px] rounded-md bg-primary px-3 py-1.5 text-[12px] font-semibold text-primary-foreground"
+            >
+              {isLast ? "Got it" : "Next"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+type BubblePosition = ReturnType<typeof getBubblePosition>
+
+function getBubbleEdgePoint(
+  bubble: BubblePosition,
+  _target: OnboardingTarget,
+): { x: number; y: number } {
+  return {
+    x: bubble.anchorX,
+    y: bubble.top - 8,
+  }
+}
+
+function getTargetEdgePoint(
+  rect: TourRect,
+  _bubbleSide: BubblePosition["side"],
+  target: OnboardingTarget,
+): { x: number; y: number } {
+  const xRatio = target === "run-in-dev" ? 0.58 : 0.42
+  return {
+    x: rect.left + rect.width * xRatio,
+    y: rect.top + rect.height + 8,
+  }
+}
+
+function getArrowPath(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): string {
+  const midY = from.y + (to.y - from.y) * 0.56
+  return `M ${from.x} ${from.y} C ${from.x} ${midY}, ${to.x} ${midY}, ${to.x} ${to.y}`
+}
+
+function ArrowHead({
+  from,
+  to,
+}: {
+  from: { x: number; y: number }
+  to: { x: number; y: number }
+}) {
+  const angle = Math.atan2(to.y - from.y, to.x - from.x)
+  const length = 10
+  const spread = 0.62
+  const left = {
+    x: to.x - Math.cos(angle - spread) * length,
+    y: to.y - Math.sin(angle - spread) * length,
+  }
+  const right = {
+    x: to.x - Math.cos(angle + spread) * length,
+    y: to.y - Math.sin(angle + spread) * length,
+  }
+
+  return (
+    <g
+      style={{
+        transition: "transform 420ms cubic-bezier(0.22, 1, 0.36, 1)",
+      }}
+    >
+      <path
+        d={`M ${left.x} ${left.y} L ${to.x} ${to.y} L ${right.x} ${right.y}`}
+        fill="none"
+        stroke="var(--background)"
+        strokeWidth="5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d={`M ${left.x} ${left.y} L ${to.x} ${to.y} L ${right.x} ${right.y}`}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </g>
+  )
+}
+
+function Backdrop({ rect }: { rect: TourRect | null }) {
+  if (!rect) {
+    return (
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-0 bg-black/50"
+        style={{ zIndex: 0 }}
+      />
+    )
+  }
+
+  const right = Math.max(0, window.innerWidth - rect.left - rect.width)
+  const bottom = Math.max(0, window.innerHeight - rect.top - rect.height)
+
+  return (
+    <>
+      <div
+        aria-hidden
+        className="pointer-events-none fixed left-0 right-0 top-0 bg-black/50"
+        style={{ zIndex: 0, height: rect.top }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none fixed left-0 bg-black/50"
+        style={{
+          zIndex: 0,
+          top: rect.top,
+          width: rect.left,
+          height: rect.height,
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none fixed bg-black/50"
+        style={{
+          zIndex: 0,
+          top: rect.top,
+          right: 0,
+          width: right,
+          height: rect.height,
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none fixed bottom-0 left-0 right-0 bg-black/50"
+        style={{ zIndex: 0, height: bottom }}
+      />
+    </>
+  )
+}
+
+function getBubblePosition(rect: TourRect | null): {
+  left: number
+  top: number
+  width: number
+  height: number
+  side: "below"
+  anchorX: number
+} {
+  const width = Math.min(360, window.innerWidth - 32)
+  const height = 198
+  if (!rect) {
+    return {
+      left: 16,
+      top: 88,
+      width,
+      height,
+      side: "below",
+      anchorX: 16 + width / 2,
+    }
+  }
+
+  const targetX = rect.left + rect.width / 2
+  const left = Math.min(
+    window.innerWidth - width - 16,
+    Math.max(16, targetX - width / 2),
+  )
+  const top = Math.min(
+    window.innerHeight - height - 16,
+    rect.top + rect.height + 58,
+  )
+  const anchorX = Math.min(left + width - 42, Math.max(left + 42, targetX))
+  return { left, top, width, height, side: "below", anchorX }
 }
 
 // ---------------------------------------------------------------------------

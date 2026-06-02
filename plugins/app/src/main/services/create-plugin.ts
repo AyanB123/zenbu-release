@@ -2,11 +2,23 @@ import fs from "node:fs"
 import fsp from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 import { spawn } from "node:child_process"
 import { nanoid } from "nanoid"
 import { Service } from "@zenbujs/core/runtime"
 import { RpcService } from "@zenbujs/core/services"
 import { getBundledPaths } from "@zenbujs/core/env-bootstrap"
+
+// Resolved at load time so we don't pay the cost on every create.
+// The file is bundled into the host's `src/main/data/` so it
+// ships with production builds (build config's `plugins/app/src/**`
+// glob picks it up).
+const PLUGIN_AUTHORING_GUIDE_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "data",
+  "plugin-authoring.md",
+)
 
 export type CreatePluginArgs = {
   /** Lowercase-hyphen plugin name. Must match `/^[a-z][a-z0-9-]*$/`. */
@@ -158,6 +170,34 @@ export class CreatePluginService extends Service.create({
 
     if (!fs.existsSync(pluginPath)) {
       throw new Error(`scaffold finished but ${pluginPath} is missing`)
+    }
+
+    // Prepend the Zenbu plugin authoring guide to the scaffolded
+    // plugin's AGENTS.md. The scaffold lands a framework-reference
+    // AGENTS.md from create-zenbu-app's `templates/plugin/`; we
+    // prepend our app-specific guide so the agent knows about
+    // slots, events, the `app` plugin's DB layout, etc. Best-effort:
+    // a missing source file (e.g. a stripped dev tree) or a
+    // missing target shouldn't fail the create.
+    try {
+      const agentsTarget = path.join(pluginPath, "AGENTS.md")
+      const guide = await fsp.readFile(
+        PLUGIN_AUTHORING_GUIDE_PATH,
+        "utf-8",
+      )
+      const existing = fs.existsSync(agentsTarget)
+        ? await fsp.readFile(agentsTarget, "utf-8")
+        : ""
+      await fsp.writeFile(
+        agentsTarget,
+        guide + "\n\n---\n\n" + existing,
+      )
+    } catch (err) {
+      step(
+        `Warning: could not prepend plugin authoring guide: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
     }
 
     step("Done.")

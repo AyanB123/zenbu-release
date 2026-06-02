@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { useInjections } from "@zenbujs/core/react"
 import { Compartment, EditorState, Prec, type Extension } from "@codemirror/state"
 import {
   EditorView,
@@ -7,10 +8,6 @@ import {
   drawSelection,
 } from "@codemirror/view"
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands"
-import {
-  markdownDecorations,
-  markdownTheme,
-} from "@zenbu/cm-markdown/extension"
 import { cn } from "@/lib/utils"
 import {
   detectTrigger,
@@ -55,12 +52,12 @@ type MenuState = {
 }
 
 /**
- * Lightweight CodeMirror-backed markdown input. Re-uses the composer's
- * Obsidian-style live-preview decorations (`markdownDecorations` +
- * `markdownTheme` from `@zenbu/cm-markdown/extension`) so bold / italic /
- * code / strike / headings render inline as you type, but strips all
- * the composer-specific machinery (file pills, image pills, slash
- * menu, vim mode, db client field, paste handlers).
+ * Lightweight CodeMirror-backed markdown input. Picks up
+ * Obsidian-style live-preview decorations from the
+ * `cm.markdown-extension` slot (cm-markdown plugin) so bold /
+ * italic / code / strike / headings render inline as you type,
+ * but strips the composer-specific machinery (file pills, image
+ * pills, slash menu, vim mode, db client field, paste handlers).
  *
  * Optional typeahead triggers (passed via `triggers`) let callers add
  * `@mention` / `#issue`-style autocompletes. The editor owns the
@@ -79,6 +76,23 @@ export function MarkdownEditor({
 }: MarkdownEditorProps) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
+
+  // Markdown live-preview (and any other markdown CM extension)
+  // from the `cm.markdown-extension` slot. Held in a compartment
+  // so contributions can reconfigure without remounting.
+  const contributed = useInjections<Extension>({
+    kind: "cm.markdown-extension",
+  })
+  const mergedContributed = useMemo<readonly Extension[]>(
+    () => contributed.map(e => e.value),
+    [contributed],
+  )
+  const contributedRef = useRef<readonly Extension[]>(mergedContributed)
+  contributedRef.current = mergedContributed
+  const contributedCompRef = useRef<Compartment | null>(null)
+  if (!contributedCompRef.current) {
+    contributedCompRef.current = new Compartment()
+  }
 
   // Keep callbacks fresh without rebuilding the view on every render.
   // Same trick `composer.tsx` uses for its update listener.
@@ -317,8 +331,7 @@ export function MarkdownEditor({
       menuKeymap,
       history(),
       drawSelection(),
-      markdownDecorations,
-      markdownTheme,
+      contributedCompRef.current!.of(contributedRef.current as Extension[]),
       placeholderComp.of(cmPlaceholder(placeholderRef.current)),
       keymap.of([...defaultKeymap, ...historyKeymap]),
       EditorView.lineWrapping,
@@ -365,6 +378,15 @@ export function MarkdownEditor({
     if (!view || !comp) return
     view.dispatch({ effects: comp.reconfigure(cmPlaceholder(placeholder ?? "")) })
   }, [placeholder])
+
+  useEffect(() => {
+    const view = viewRef.current
+    const comp = contributedCompRef.current
+    if (!view || !comp) return
+    view.dispatch({
+      effects: comp.reconfigure(mergedContributed as Extension[]),
+    })
+  }, [mergedContributed])
 
   return (
     <>

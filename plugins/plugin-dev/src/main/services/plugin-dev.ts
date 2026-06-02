@@ -3,14 +3,12 @@ import fs from "node:fs"
 import fsp from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { fileURLToPath } from "node:url"
 import { nanoid } from "nanoid"
 import { Service } from "@zenbujs/core/runtime"
 import {
   BaseWindowService,
   DbService,
   RpcService,
-  ViewRegistryService,
   WindowService,
 } from "@zenbujs/core/services"
 import type { InferSchemaRoot } from "@zenbujs/core/db"
@@ -23,9 +21,7 @@ import pluginDevSchema from "../schema"
 type PluginDevRun =
   InferSchemaRoot<typeof pluginDevSchema>["runs"][string]
 
-const here = path.dirname(fileURLToPath(import.meta.url))
-const VIEW_SOURCE = path.resolve(here, "../../views/plugin-dev-buttons.tsx")
-const VIEW_TYPE = "plugin-dev-buttons"
+const NAME = "plugin-dev-buttons"
 
 /** Cross-process onboarding preferences. Lives in `~/.zenbu/.internal/`
  * so it's shared between the parent host and any sandboxed dev
@@ -98,7 +94,7 @@ type LiveRun = {
  *    `runs.<id>.logs` collection so the title-bar popover can
  *    render a scrollback even after the child has exited.
  *  - **`installLocal`**: writes the plugin's manifest path into
- *    the user's `zenbu.local.ts` overlay. Reuses
+ *    the user's `zenbu.plugins.local.jsonc` overlay. Reuses
  *    `plugin-installer`'s patch helper.
  *
  * Both methods resolve a directory or manifest path; passing the
@@ -109,7 +105,6 @@ export class PluginDevService extends Service.create({
   deps: {
     rpc: RpcService,
     db: DbService,
-    viewRegistry: ViewRegistryService,
     // `window.respawnSelf` is the framework primitive that knows
     // how to launch a fresh instance of the host in either dev or
     // production, with isolated user-data-dir and DB sandbox. We
@@ -130,35 +125,30 @@ export class PluginDevService extends Service.create({
   private readonly live = new Map<string, LiveRun>()
 
   async evaluate() {
-    this.setup("register-view", () => {
-      void this.ctx.viewRegistry.registerView({
-        type: VIEW_TYPE,
-        rendering: "component",
-        source: { modulePath: VIEW_SOURCE },
+    this.setup("inject-view", () =>
+      this.inject({
+        name: NAME,
+        modulePath: "./src/views/plugin-dev-buttons.tsx",
         meta: {
-          // Sits to the left of `open-in` (titleBarOrder: 1) and
-          // `play` (titleBarOrder: 2). Negative on purpose so
-          // future built-ins land between us and them without
-          // renumbering.
+          // Sits to the left of `open-in` (order: 1) and `play`
+          // (order: 2). Zero on purpose so future built-ins land
+          // between us and them without renumbering.
           kind: "title-bar",
-          titleBarOrder: 0,
+          order: 0,
           label: "Plugin dev",
         },
-      })
-      return () => {
-        void this.ctx.viewRegistry.unregisterView(VIEW_TYPE)
-      }
-    })
+      }),
+    )
 
     // Inject the onboarding modals + dev-mode border overlay into
-    // every entrypoint window. The script itself decides whether
-    // to render based on `useDb(root => root.pluginDev.devMode)`
-    // and the active workspace's kind, so a normal workspace
-    // window pays only the mount cost.
+    // the host renderer. The script itself decides whether to
+    // render based on `useDb(root => root.pluginDev.devMode)` and
+    // the active workspace's kind, so a normal workspace pays
+    // only the mount cost.
     this.setup("inject-modals", () =>
-      this.injectContentScript({
-        view: "entrypoint",
-        modulePath: "src/content/plugin-dev-modals.tsx",
+      this.inject({
+        name: "pluginDev/modals",
+        modulePath: "./src/content/plugin-dev-modals.tsx",
       }),
     )
 
@@ -426,10 +416,10 @@ export class PluginDevService extends Service.create({
   }
 
   /**
-   * Append the plugin's manifest path to the user's `zenbu.local.ts`
-   * overlay. The framework's loader watches that file and re-loads
-   * the plugin set on edit, so the new entry takes effect without
-   * a manual restart.
+   * Append the plugin's manifest path to the user's
+   * `zenbu.plugins.local.jsonc` overlay. The framework's loader
+   * watches that file and re-loads the plugin set on edit, so the
+   * new entry takes effect without a manual restart.
    */
   async installLocal(args: { pluginPath: string }): Promise<{
     ok: true

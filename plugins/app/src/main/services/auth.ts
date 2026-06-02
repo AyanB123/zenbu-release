@@ -592,6 +592,20 @@ export class AuthService extends Service.create({
           f.instructions = info.instructions ?? null
         })
       },
+      onDeviceCode: info => {
+        // Device-code flow (pi-ai 0.78+): open the verification
+        // URL and surface the user code so they can enter it.
+        void shell.openExternal(info.verificationUri).catch(err => {
+          console.error("[auth] openExternal failed:", err)
+        })
+        void this.ctx.db.client.update(root => {
+          const f = root.app.oauthFlow
+          if (!f || f.flowId !== flowId) return
+          f.step = "openUrl"
+          f.url = info.verificationUri
+          f.instructions = `Enter the code: ${info.userCode}`
+        })
+      },
       onProgress: message => {
         void this.ctx.db.client.update(root => {
           const f = root.app.oauthFlow

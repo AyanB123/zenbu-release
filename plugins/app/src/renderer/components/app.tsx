@@ -1,5 +1,5 @@
-import { lazy, Suspense, useEffect } from "react";
-import { useDb, useDbClient } from "@zenbujs/core/react";
+import { lazy, Suspense, useEffect, useMemo } from "react";
+import { View, useDb, useDbClient } from "@zenbujs/core/react";
 import { WorkspaceShell } from "./workspace-shell/workspace-shell";
 import { TooltipProvider } from "@zenbu/ui/tooltip";
 import { useThemeSync } from "@/lib/theme";
@@ -7,6 +7,9 @@ import { useAnalyticsSync } from "@/lib/analytics";
 import { useWindowId } from "@/lib/window-state/window-id";
 import { useActiveView, useShowOnboardingView } from "@/lib/window-state/active-view";
 import { selectWorkspaceInRoot } from "@/lib/window-state/selection";
+/**
+ * we don't really need to lazy load this, can remove
+ */
 
 const AgentCompletionNotifier = lazy(() =>
   import("./agent-completion-notifier").then((m) => ({
@@ -30,9 +33,6 @@ const KilledAgentsWatcher = lazy(() =>
 )
 const NotifyListener = lazy(() =>
   import("./notify-listener").then((m) => ({ default: m.NotifyListener })),
-)
-const ShortcutBridge = lazy(() =>
-  import("./shortcut-bridge").then((m) => ({ default: m.ShortcutBridge })),
 )
 const OAuthFlowModal = lazy(() =>
   import("./auth/oauth-flow-modal").then((m) => ({
@@ -59,8 +59,38 @@ function AppReadyMarker() {
   return null
 }
 
+/**
+ * Read the `?route=<injection>` URL param the framework's
+ * `WindowService.openWindow({ injection })` stamps into sub-window
+ * URLs. When present, `App` renders `<View name={route} />` instead
+ * of the default workspace shell so each new BrowserWindow lands
+ * on the right top-level component (e.g. `chat-window`).
+ */
+function useRoute(): string | null {
+  return useMemo(() => {
+    if (typeof window === "undefined") return null
+    return new URLSearchParams(window.location.search).get("route")
+  }, [])
+}
+
 export function App() {
   markAppReady("app-function-entered")
+  const route = useRoute()
+  if (route) {
+    // Sub-window: defer entirely to the injection. The injection
+    // ships its own chrome (title bar, modals, etc.) so the host
+    // doesn't try to wrap it with workspace UI it doesn't want.
+    return (
+      <TooltipProvider>
+        <View name={route} args={{}} />
+        <Suspense fallback={null}>
+          <NotifyListener />
+          <OAuthFlowModal />
+          <Toaster position="top-right" />
+        </Suspense>
+      </TooltipProvider>
+    )
+  }
   const workspaces = useDb((root) =>
     Object.values(root.app.workspaces).filter((w) => !w.archived),
   );
@@ -90,7 +120,6 @@ export function App() {
       <Suspense fallback={null}>
         <CommandPalette />
         <AgentsPalette />
-        <ShortcutBridge />
         <KilledAgentsWatcher />
         <AgentCompletionNotifier />
         <NotifyListener />

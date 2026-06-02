@@ -591,9 +591,6 @@ export async function forkAtUserMessage(args: {
             ? state.panes.findIndex(p => p.id === state.activePaneId)
             : 0
         const pane = state.panes[paneIdx]!
-        // Seed a one-entry navigation history on the new tab so
-        // the strip's back/forward arrows have a defined starting
-        // point. Matches the helpers in window-state.ts.
         const newTabContent = { kind: "chat" as const, chatId }
         state.panes[paneIdx] = {
           ...pane,
@@ -602,10 +599,6 @@ export async function forkAtUserMessage(args: {
             {
               id: tabId,
               content: newTabContent,
-              history: {
-                entries: [{ ...newTabContent }],
-                index: 0,
-              },
             },
           ],
           activeTabId: tabId,

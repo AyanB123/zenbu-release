@@ -17,7 +17,7 @@ function getWindowId(): string {
 
 /**
  * Workspace-rail gear button. Mounted by the host's
- * `<WorkspaceRail footer>` slot via `<View type="settings-rail-button" />`.
+ * `<WorkspaceRail footer>` slot via `<View name="settings-rail-button" />`.
  *
  * Click → routed through the host's `app.openSettings` event
  * (same path used by ⌘, and the command palette). The host's

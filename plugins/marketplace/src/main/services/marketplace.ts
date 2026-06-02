@@ -1,28 +1,16 @@
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { fileURLToPath } from "node:url"
 import { Service } from "@zenbujs/core/runtime"
-import { RpcService, ViewRegistryService } from "@zenbujs/core/services"
-
-const here = path.dirname(fileURLToPath(import.meta.url))
+import { RpcService } from "@zenbujs/core/services"
 
 // Where the plugin-installer / create-plugin drop plugins. A dir
 // here is "available"; whether it's also installed (i.e. in
 // `root.app.plugins`) is decided client-side.
 const PLUGINS_HOME = path.join(os.homedir(), ".zenbu", "plugins")
 
-const SIDEBAR_VIEW_SOURCE = path.resolve(
-  here,
-  "../../views/marketplace-sidebar-view.tsx",
-)
-const DETAIL_VIEW_SOURCE = path.resolve(
-  here,
-  "../../views/plugin-detail-view.tsx",
-)
-
-const SIDEBAR_VIEW_TYPE = "marketplace"
-const DETAIL_VIEW_TYPE = "plugin-detail"
+const SIDEBAR_NAME = "marketplace"
+const DETAIL_NAME = "plugin-detail"
 
 /**
  * Marketplace plugin service.
@@ -48,48 +36,39 @@ const DETAIL_VIEW_TYPE = "plugin-detail"
 export class MarketplaceService extends Service.create({
   key: "marketplace",
   deps: {
-    viewRegistry: ViewRegistryService,
     rpc: RpcService,
   },
 }) {
   evaluate() {
-    this.setup("register-sidebar-view", () => {
-      void this.ctx.viewRegistry.registerView({
-        type: SIDEBAR_VIEW_TYPE,
-        rendering: "component",
-        source: { modulePath: SIDEBAR_VIEW_SOURCE },
+    this.setup("inject-sidebar-view", () =>
+      this.inject({
+        name: SIDEBAR_NAME,
+        modulePath: "./src/views/marketplace-sidebar-view.tsx",
         meta: {
           kind: "left-sidebar",
           label: "Marketplace",
-          // Sits after the agent (10) tab. Multiples of 10 leave room
-          // for other plugins to slot between.
+          // Sits after the agent (10) tab. Multiples of 10 leave
+          // room for other plugins to slot between.
           order: 30,
           // Auto-registered shortcut for opening this tab (see
           // SidebarViewShortcutsService). Matches VS Code's
           // Extensions panel shortcut (⌘⇧X).
           shortcut: { mod: true, shift: true, key: "x" },
         },
-      })
-      return () => {
-        void this.ctx.viewRegistry.unregisterView(SIDEBAR_VIEW_TYPE)
-      }
-    })
+      }),
+    )
 
-    this.setup("register-detail-view", () => {
-      void this.ctx.viewRegistry.registerView({
-        type: DETAIL_VIEW_TYPE,
-        rendering: "component",
-        source: { modulePath: DETAIL_VIEW_SOURCE },
+    this.setup("inject-detail-view", () =>
+      this.inject({
+        name: DETAIL_NAME,
+        modulePath: "./src/views/plugin-detail-view.tsx",
         // `kind: "embed"` matches the convention used by other
         // arg-driven pane views (e.g. `plan`): hidden from the
         // command palette, reached only via
         // `openViewInActivePane`.
         meta: { kind: "embed", label: "Plugin" },
-      })
-      return () => {
-        void this.ctx.viewRegistry.unregisterView(DETAIL_VIEW_TYPE)
-      }
-    })
+      }),
+    )
   }
 
   /**
@@ -119,7 +98,7 @@ export class MarketplaceService extends Service.create({
     directory?: string
   }): Promise<{ ok: true }> {
     this.ctx.rpc.emit.app.openViewInActivePane({
-      viewType: DETAIL_VIEW_TYPE,
+      viewType: DETAIL_NAME,
       source: "marketplace",
       args: { pluginId: args.pluginId, directory: args.directory },
       placement: "left",

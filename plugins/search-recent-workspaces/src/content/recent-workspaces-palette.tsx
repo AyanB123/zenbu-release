@@ -100,11 +100,12 @@ function RecentWorkspacesPalette() {
 
     // Group active scopes by workspace once so we don't rescan
     // `scopesById` per row. Same filter the agent sidebar applies
-    // (`!archived && !completed`) so the picker mirrors what the
-    // sidebar would show after a workspace switch.
+    // (`!archived`) so the picker mirrors what the sidebar would
+    // show after a workspace switch. (The legacy `completed`
+    // concept was folded into `archived` upstream.)
     const scopesByWs = new Map<string, string[]>()
     for (const scope of Object.values(scopesById)) {
-      if (scope.archived || scope.completed) continue
+      if (scope.archived) continue
       const arr = scopesByWs.get(scope.workspaceId) ?? []
       arr.push(scope.id)
       scopesByWs.set(scope.workspaceId, arr)

@@ -22,7 +22,6 @@ export class SearchRecentAgentsService extends Service.create({
   evaluate() {
     this.setup("replace-agents-palette", () =>
       this.advise({
-        view: "entrypoint",
         moduleId: "components/command-palette/agents-palette.tsx",
         name: "AgentsPalette",
         type: "replace",

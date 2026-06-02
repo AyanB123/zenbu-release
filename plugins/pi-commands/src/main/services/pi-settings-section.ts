@@ -1,17 +1,8 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { Service } from "@zenbujs/core/runtime";
-import { ViewRegistryService } from "@zenbujs/core/services";
 import { SettingsRegistryService } from "@zenbu/settings/services/settings-registry";
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const VIEW_SOURCE = path.resolve(
-  here,
-  "../../views/pi-settings-section-view.tsx",
-);
-
 const SECTION_ID = "pi";
-const VIEW_TYPE = "pi-settings";
+const VIEW_NAME = "pi-settings";
 
 /**
  * Contributes a "Pi" section to the settings panel's Plugins tab.
@@ -21,7 +12,7 @@ const VIEW_TYPE = "pi-settings";
  * (toggle / select / text / number / button) can't capture them
  * directly. Instead we use the registry's `body: { kind: "view" }`
  * escape hatch: the section's body is mounted as a
- * `<View type="pi-settings" />` and the view owns its own UI.
+ * `<View name="pi-settings" />` and the view owns its own UI.
  *
  * Two registrations land in this service:
  *
@@ -42,21 +33,16 @@ export class PiSettingsSectionService extends Service.create({
   key: "piSettingsSection",
   deps: {
     settingsRegistry: SettingsRegistryService,
-    viewRegistry: ViewRegistryService,
   },
 }) {
   evaluate() {
-    this.setup("register-view", () => {
-      void this.ctx.viewRegistry.registerView({
-        type: VIEW_TYPE,
-        rendering: "component",
-        source: { modulePath: VIEW_SOURCE },
+    this.setup("inject-view", () =>
+      this.inject({
+        name: VIEW_NAME,
+        modulePath: "./src/views/pi-settings-section-view.tsx",
         meta: { kind: "view", label: "Pi settings" },
-      });
-      return () => {
-        void this.ctx.viewRegistry.unregisterView(VIEW_TYPE);
-      };
-    });
+      }),
+    );
 
     this.setup("register-section", () => {
       void this.ctx.settingsRegistry.registerSection({
@@ -64,7 +50,7 @@ export class PiSettingsSectionService extends Service.create({
         label: "Pi",
         order: 10,
         icon: PI_ICON_SVG,
-        body: { kind: "view", viewType: VIEW_TYPE },
+        body: { kind: "view", viewType: VIEW_NAME },
       });
       return () => {
         void this.ctx.settingsRegistry.unregisterSection({

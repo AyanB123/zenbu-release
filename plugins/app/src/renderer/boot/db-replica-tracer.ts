@@ -10,6 +10,7 @@ type WriteOp = {
   path?: string[]
   collectionId?: string
   data?: unknown[]
+  value?: unknown
 }
 
 type DbEvent = {

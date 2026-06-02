@@ -1,8 +1,6 @@
 import { Service } from "@zenbujs/core/runtime"
 import {
-  RendererHostService,
   RpcService,
-  ViewRegistryService,
 } from "@zenbujs/core/services"
 
 /**
@@ -26,23 +24,17 @@ import {
 export class ToolOutputService extends Service.create({
   key: "toolOutput",
   deps: {
-    viewRegistry: ViewRegistryService,
     // Needed so we can emit `openToolOutputInActivePane`.
     rpc: RpcService,
-    // Order-only: `registerView({ source: { pathPrefix } })` needs the renderer's
     // vite server to already be live.
-    rendererHost: RendererHostService,
   },
 }) {
   evaluate() {
     this.setup("register-view", () =>
-      this.registerView({
-        type: "tool-output",
-        rendering: "component",
-        source: {
-          modulePath: "src/renderer/views/tool-output/tool-output-app.tsx",
-          exportName: "ToolOutputApp",
-        },
+      this.inject({
+        name: "tool-output",
+        modulePath: "src/renderer/views/tool-output/tool-output-app.tsx",
+        exportName: "ToolOutputApp",
         meta: { kind: "embed", label: "Tool Output" },
       }),
     )

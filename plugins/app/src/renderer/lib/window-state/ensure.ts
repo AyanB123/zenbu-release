@@ -22,9 +22,10 @@ export function ensureWindowState(root: Root, windowId: string): WindowState {
     activeView: { kind: "onboarding" },
     scopePanes: {},
     workspaceActiveScope: {},
-    workspaceRailOpen: true,
+    workspaceRailOpen: false,
     workspaceUiStates: {},
     scopeUiStates: {},
+    pluginsView: { selectedPluginName: null, sidebarOpen: true },
     fullscreen: false,
   }
   return root.app.windowStates[windowId]!

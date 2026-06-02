@@ -11,7 +11,7 @@ export type PluginSidebarViewProps = {
 export function PluginSidebarView({ viewType, args }: PluginSidebarViewProps) {
   return (
     <View
-      type={viewType}
+      name={viewType}
       args={args}
       className="size-full"
       fallback={

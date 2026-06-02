@@ -7,7 +7,7 @@
     ".": "./zenbu.plugin.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "^0.74.0",
+    "@earendil-works/pi-coding-agent": "^0.78.0",
     "@zenbu/view-theme": "workspace:*",
     "@tailwindcss/vite": "^4.2.0",
     "@vitejs/plugin-react": "^5.0.0",

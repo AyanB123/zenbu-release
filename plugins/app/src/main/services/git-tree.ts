@@ -1,9 +1,5 @@
-import path from "node:path"
-import { fileURLToPath } from "node:url"
 import { Service } from "@zenbujs/core/runtime"
-import { RpcService, ViewRegistryService } from "@zenbujs/core/services"
-
-const here = path.dirname(fileURLToPath(import.meta.url))
+import { RpcService } from "@zenbujs/core/services"
 
 /**
  * Registers two views that, taken together, give us a sidebar
@@ -26,38 +22,25 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 export class GitTreeService extends Service.create({
   key: "gitTree",
   deps: {
-    viewRegistry: ViewRegistryService,
     // Needed so we can emit `openDiffInActivePane` when the sidebar
     // view asks to open a file.
     rpc: RpcService,
   },
 }) {
   evaluate() {
-    // Note: the right-sidebar `git-tree-sidebar` view used to be
-    // registered here. It now lives in the standalone
-    // `@zenbu/git-tree-sidebar` plugin as a
-    // `rendering: "component"` view, which calls back into
-    // `rpc.app.gitTree.openDiff` (still owned here).
-
-    this.setup("register-diff-view", () => {
-      this.ctx.viewRegistry.registerView({
-        type: "git-diff",
-        rendering: "component",
-        source: {
-          modulePath: path.resolve(
-            here,
-            "../../renderer/views/git-diff/git-diff-view.tsx",
-          ),
-        },
+    // The right-sidebar `git-tree-sidebar` view lives in the
+    // standalone `@zenbu/git-tree-sidebar` plugin; this service
+    // just owns the `openDiff` RPC + the `git-diff` pane view.
+    this.setup("inject-diff-view", () =>
+      this.inject({
+        name: "git-diff",
+        modulePath: "./src/renderer/views/git-diff/git-diff-view.tsx",
         // `kind: "embed"` keeps the view out of the command palette
         // (it needs args to be meaningful) while still letting other
         // services open it via `useOpenView`.
         meta: { kind: "embed", label: "Diff" },
-      })
-      return () => {
-        void this.ctx.viewRegistry.unregisterView("git-diff")
-      }
-    })
+      }),
+    )
   }
 
   /** Called by the git-tree sidebar view OR a turn-summary card

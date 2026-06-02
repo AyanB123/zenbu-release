@@ -1,5 +1,10 @@
 import { useMemo } from "react"
-import { useDb, useDbClient, useRpc } from "@zenbujs/core/react"
+import {
+  useDb,
+  useDbClient,
+  useInjections,
+  useRpc,
+} from "@zenbujs/core/react"
 import type { OpenMode } from "@/lib/window-state/types"
 import { openViewInRoot } from "@/lib/window-state/panes/views"
 import { useWindowId } from "@/lib/window-state/window-id"
@@ -54,7 +59,7 @@ const VIEW_ACTIONS: ReadonlyArray<{
  * Re-renders automatically when any of those sources change.
  */
 export function useCommands(): Command[] {
-  const registry = useDb((root) => root.core.lastKnownViewRegistry ?? [])
+  const registry = useInjections()
   const actions = useDb((root) => root.app.paletteActions)
   const dbClient = useDbClient()
   const rpc = useRpc()
@@ -239,11 +244,14 @@ export function useCommands(): Command[] {
     // Requests is also skipped because (3) already covers it.
     // -----------------------------------------------------------------
     const views = registry
-      .filter((v) => v.meta?.kind === "view" && v.meta?.sidebar !== true)
-      .filter((v) => v.type !== "pull-requests")
+      .filter((v) => v.meta?.kind === "view")
+      .filter((v) => v.name !== "pull-requests")
       .map((v) => ({
-        type: v.type,
-        label: v.meta?.label ?? formatLabel(v.type),
+        type: v.name,
+        label:
+          typeof v.meta?.label === "string"
+            ? v.meta.label
+            : formatLabel(v.name),
       }))
       .sort((a, b) => a.label.localeCompare(b.label))
 

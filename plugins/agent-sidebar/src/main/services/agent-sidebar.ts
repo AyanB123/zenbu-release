@@ -1,36 +1,27 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { Service } from "@zenbujs/core/runtime";
-import { ViewRegistryService } from "@zenbujs/core/services";
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const VIEW_SOURCE = path.resolve(here, "../../views/agent-sidebar-view.tsx");
-
-const VIEW_TYPE = "agent";
+const NAME = "agent";
 
 /**
  * Agent sidebar service.
  *
- * Registers the chat-list view as `rendering: "component"` so the
- * host renders it in-process — no iframe, no postMessage. Tagged
- * `meta.kind = "left-sidebar"` so the host's `LeftSidebarTabBar`
- * picks it up as a tab. The host renders the active tab's view in
- * the sidebar body via `<View type={tabId} />`.
+ * Injects the chat-list view under `name = "agent"` so the host's
+ * left-sidebar discovery hook (`useInjections({ kind: "left-sidebar" })`)
+ * picks it up as a tab. The active tab body is rendered with
+ * `<View name="agent" />`.
  *
- * The label / icon shown on the tab come from the view registry
- * metadata + the host's icon manifest (the `"agent"` icon entry
- * in `plugins/app/zenbu.plugin.ts#icons`).
+ * The label / icon shown on the tab come from `meta.label` and the
+ * plugin manifest's `icons[name]` (auto-attached to `meta.icon` by
+ * `this.inject(...)`).
  */
 export class AgentSidebarService extends Service.create({
   key: "agentSidebar",
-  deps: { viewRegistry: ViewRegistryService },
 }) {
   evaluate() {
-    this.setup("register-view", () => {
-      void this.ctx.viewRegistry.registerView({
-        type: VIEW_TYPE,
-        rendering: "component",
-        source: { modulePath: VIEW_SOURCE },
+    this.setup("inject-view", () =>
+      this.inject({
+        name: NAME,
+        modulePath: "./src/views/agent-sidebar-view.tsx",
         meta: {
           kind: "left-sidebar",
           label: "Agents",
@@ -42,10 +33,7 @@ export class AgentSidebarService extends Service.create({
           // `meta` on macOS and `control` elsewhere.
           shortcut: { mod: true, shift: true, key: "1" },
         },
-      });
-      return () => {
-        void this.ctx.viewRegistry.unregisterView(VIEW_TYPE);
-      };
-    });
+      }),
+    );
   }
 }

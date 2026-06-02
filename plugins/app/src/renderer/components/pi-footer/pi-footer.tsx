@@ -18,8 +18,9 @@ export type PiFooterProps = {
  * exposes a registry-based slot for plugins to drop items into.
  *
  * No item-specific code here — discovery + layout only. Items are
- * registered by plugins with `meta.kind = "pi-footer.item"`; see
- * `useFooterItems` for the two supported registration paths.
+ * injected by plugins with `meta.kind = "footer.item"` and rendered
+ * uniformly as `<View name={item.viewType} args={{ sessionId }} />`.
+ * Items that don't need session context simply ignore the prop.
  */
 export function PiFooter({ sessionId }: PiFooterProps) {
   const { left, right } = useFooterItems()
@@ -43,13 +44,7 @@ function FooterItemSlot({
   item: FooterItem
   sessionId: string | null
 }) {
-  if (item.kind === "view") {
-    return (
-      <View type={item.viewType} args={{ sessionId }} fallback={null} />
-    )
-  }
-  // Function-registry component — no args; the component reads
-  // whatever it needs from db / its own store.
-  const Component = item.Component
-  return <Component />
+  return (
+    <View name={item.viewType} args={{ sessionId }} fallback={null} />
+  )
 }

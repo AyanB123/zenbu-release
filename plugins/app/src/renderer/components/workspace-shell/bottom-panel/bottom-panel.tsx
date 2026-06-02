@@ -19,6 +19,9 @@ export type BottomPanelProps = {
    * we use this signal to pull focus into the active view whenever
    * the panel transitions to open. */
   panelOpen?: boolean
+  /** Collapse the panel. Wired to the close (X) button in the
+   * tab strip. */
+  onClose: () => void
 }
 
 /**
@@ -40,6 +43,7 @@ export function BottomPanel({
   onSelectType,
   args,
   panelOpen = true,
+  onClose,
 }: BottomPanelProps) {
   const [visited, setVisited] = useState<Set<string>>(() => new Set([openType]))
   // Container for the entire panel (tab bar + content). Used by the
@@ -85,11 +89,10 @@ export function BottomPanel({
     const wrapper = wrappersRef.current.get(openType)
     if (!wrapper) return
     const raf = requestAnimationFrame(() => {
-      const iframe = wrapper.querySelector("iframe")
-      if (iframe instanceof HTMLIFrameElement) {
-        try { iframe.focus() } catch {}
-        return
-      }
+      // Bottom-panel views are component injections rendered into
+      // the host React tree — the focus target is opt-in via
+      // `[data-bottom-panel-focus-target]` on a `tabIndex={-1}`
+      // wrapper inside the view.
       const target = wrapper.querySelector<HTMLElement>(
         "[data-bottom-panel-focus-target]",
       )
@@ -154,7 +157,7 @@ export function BottomPanel({
             style={{ display: view.type === openType ? "block" : "none" }}
           >
             <View
-              type={view.type}
+              name={view.type}
               args={args}
               className="size-full"
               fallback={
@@ -170,6 +173,7 @@ export function BottomPanel({
         views={views}
         activeType={openType}
         onSelect={onSelectType}
+        onClose={onClose}
       />
     </div>
   )

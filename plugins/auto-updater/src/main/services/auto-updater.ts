@@ -1,13 +1,8 @@
-import path from "node:path"
 import { promisify } from "node:util"
 import { execFile } from "node:child_process"
-import { fileURLToPath } from "node:url"
 import { Service } from "@zenbujs/core/runtime"
-import { ViewRegistryService } from "@zenbujs/core/services"
 
-const here = path.dirname(fileURLToPath(import.meta.url))
-const VIEW_SOURCE = path.resolve(here, "../../views/auto-updater-view.tsx")
-const VIEW_TYPE = "auto-updater-button"
+const NAME = "auto-updater-button"
 
 const execFileP = promisify(execFile)
 
@@ -51,30 +46,23 @@ type DiffEntry = {
  */
 export class AutoUpdaterService extends Service.create({
   key: "autoUpdater",
-  deps: {
-    viewRegistry: ViewRegistryService,
-  },
 }) {
   evaluate() {
-    this.setup("register-view", () => {
-      void this.ctx.viewRegistry.registerView({
-        type: VIEW_TYPE,
-        rendering: "component",
-        source: { modulePath: VIEW_SOURCE },
+    this.setup("inject-view", () =>
+      this.inject({
+        name: NAME,
+        modulePath: "./src/views/auto-updater-view.tsx",
         meta: {
           // Sits at the rightmost edge of the title bar's plugin
           // slot — past `open-in` (1) and `play` (2) — so the
           // update indicator is the last thing before the
           // window's right-sidebar toggle.
           kind: "title-bar",
-          titleBarOrder: 10,
+          order: 10,
           label: "Updates",
         },
-      })
-      return () => {
-        void this.ctx.viewRegistry.unregisterView(VIEW_TYPE)
-      }
-    })
+      }),
+    )
   }
 
   /**

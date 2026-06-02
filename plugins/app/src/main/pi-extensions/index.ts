@@ -1,5 +1,6 @@
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent"
 import { createBashTimeoutExtension } from "./bash-timeout"
+import { createZenbuHouseRulesExtension } from "./zenbu-house-rules"
 
 /**
  * Built-in Pi extensions loaded through the SDK's in-memory
@@ -14,5 +15,5 @@ import { createBashTimeoutExtension } from "./bash-timeout"
  * extension source lives outside the app.
  */
 export function createAppPiExtensionFactories(cwd: string): readonly ExtensionFactory[] {
-  return [createBashTimeoutExtension(cwd)]
+  return [createBashTimeoutExtension(cwd), createZenbuHouseRulesExtension(cwd)]
 }

@@ -1,15 +1,11 @@
 import path from "node:path"
 import fs from "node:fs/promises"
-import { fileURLToPath } from "node:url"
 import { nanoid } from "nanoid"
-const here = path.dirname(fileURLToPath(import.meta.url))
 import { watch, type FSWatcher } from "node:fs"
 import { Service } from "@zenbujs/core/runtime"
 import {
   DbService,
-  RendererHostService,
   RpcService,
-  ViewRegistryService,
 } from "@zenbujs/core/services"
 import { IGNORE_DIRS } from "../lib/ignore-dirs"
 import type { Schema } from "../schema"
@@ -50,14 +46,10 @@ const WATCH_DEBOUNCE_MS = 250
 export class FileTreeService extends Service.create({
   key: "fileTree",
   deps: {
-    viewRegistry: ViewRegistryService,
     db: DbService,
     // Needed so we can emit `openFileInActivePane` when the sidebar
     // view asks to open a file.
     rpc: RpcService,
-    // Order-only: registerView({ source: { pathPrefix } }) needs the renderer's vite
-    // server to already be live.
-    rendererHost: RendererHostService,
   },
 }) {
   /** Scope ids we have an in-flight indexing job for. Prevents re-entrancy
@@ -69,44 +61,30 @@ export class FileTreeService extends Service.create({
   private watchTimers = new Map<string, NodeJS.Timeout>()
 
   evaluate() {
-    this.setup("register-view", () =>
-      this.registerView({
-        type: "file-tree",
-        rendering: "component",
-        source: {
-          modulePath: "src/renderer/views/file-tree/file-tree-app.tsx",
-          exportName: "FileTreeApp",
-        },
+    this.setup("inject-file-tree-view", () =>
+      this.inject({
+        name: "file-tree",
+        modulePath: "./src/renderer/views/file-tree/file-tree-app.tsx",
+        exportName: "FileTreeApp",
         meta: { kind: "view", label: "Files" },
       }),
     )
 
-    // Note: the right-sidebar `file-tree-sidebar` view used to be
-    // registered here. It now lives in the standalone
-    // `@zenbu/file-tree-sidebar` plugin as a
-    // `rendering: "component"` view. The indexing pipeline +
-    // `openFile` RPC below still live here and are consumed by
-    // that plugin via `rpc.app.fileTree.*`.
+    // The right-sidebar `file-tree-sidebar` view lives in the
+    // standalone `@zenbu/file-tree-sidebar` plugin. The indexing
+    // pipeline + `openFile` RPC below stay here and are consumed
+    // by that plugin via `rpc.app.fileTree.*`.
 
-    this.setup("register-file-view", () => {
-      this.ctx.viewRegistry.registerView({
-        type: "file",
-        rendering: "component",
-        source: {
-          modulePath: path.resolve(
-            here,
-            "../../renderer/views/file/file-view.tsx",
-          ),
-        },
-        // `kind: "embed"` excludes the view from the command palette
-        // (it needs args to be useful) while still letting other
-        // services / event handlers open it via `useOpenView`.
+    this.setup("inject-file-view", () =>
+      this.inject({
+        name: "file",
+        modulePath: "./src/renderer/views/file/file-view.tsx",
+        // `kind: "embed"` excludes the view from the command
+        // palette (it needs args to be useful) while still letting
+        // other services / event handlers open it via `useOpenView`.
         meta: { kind: "embed", label: "File" },
-      })
-      return () => {
-        void this.ctx.viewRegistry.unregisterView("file")
-      }
-    })
+      }),
+    )
 
     this.setup("index-scopes", () => {
       void this.reconcileIndexes()
@@ -255,10 +233,14 @@ export class FileTreeService extends Service.create({
         },
       )
     } catch (err) {
-      console.warn(
-        `[fileTree] failed to start watcher for ${directory}:`,
-        err instanceof Error ? err.message : err,
-      )
+      // ENOENT (folder doesn't exist yet) is expected; don't warn.
+      const code = (err as NodeJS.ErrnoException)?.code
+      if (code !== "ENOENT") {
+        console.warn(
+          `[fileTree] failed to start watcher for ${directory}:`,
+          err instanceof Error ? err.message : err,
+        )
+      }
       return
     }
     watcher.on("error", err => {

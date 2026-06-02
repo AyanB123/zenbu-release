@@ -1,22 +1,5 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { Service } from "@zenbujs/core/runtime";
-import { ViewRegistryService } from "@zenbujs/core/services";
 import { SettingsRegistryService } from "./settings-registry";
-
-const here = path.dirname(fileURLToPath(import.meta.url));
-const PANEL_VIEW_SOURCE = path.resolve(
-  here,
-  "../../views/settings-view.tsx",
-);
-const RAIL_VIEW_SOURCE = path.resolve(
-  here,
-  "../../views/settings-rail-button.tsx",
-);
-const UPDATES_VIEW_SOURCE = path.resolve(
-  here,
-  "../../views/panels/updates-panel.tsx",
-);
 
 const PANEL_VIEW = "settings";
 const RAIL_VIEW = "settings-rail-button";
@@ -44,40 +27,30 @@ const UPDATES_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" hei
 export class SettingsViewsService extends Service.create({
   key: "settingsViews",
   deps: {
-    viewRegistry: ViewRegistryService,
     settingsRegistry: SettingsRegistryService,
   },
 }) {
   evaluate() {
-    this.setup("register-panel-view", () => {
-      void this.ctx.viewRegistry.registerView({
-        type: PANEL_VIEW,
-        rendering: "component",
-        source: { modulePath: PANEL_VIEW_SOURCE },
+    this.setup("inject-panel-view", () =>
+      this.inject({
+        name: PANEL_VIEW,
+        modulePath: "./src/views/settings-view.tsx",
         meta: { kind: "view", label: "Settings" },
-      });
-      return () => {
-        void this.ctx.viewRegistry.unregisterView(PANEL_VIEW);
-      };
-    });
+      }),
+    );
 
-    this.setup("register-rail-view", () => {
-      void this.ctx.viewRegistry.registerView({
-        type: RAIL_VIEW,
-        rendering: "component",
-        source: { modulePath: RAIL_VIEW_SOURCE },
+    this.setup("inject-rail-view", () =>
+      this.inject({
+        name: RAIL_VIEW,
+        modulePath: "./src/views/settings-rail-button.tsx",
         meta: { kind: "workspace-rail", label: "Settings" },
-      });
-      return () => {
-        void this.ctx.viewRegistry.unregisterView(RAIL_VIEW);
-      };
-    });
+      }),
+    );
 
-    this.setup("register-updates-section", () => {
-      void this.ctx.viewRegistry.registerView({
-        type: UPDATES_VIEW,
-        rendering: "component",
-        source: { modulePath: UPDATES_VIEW_SOURCE },
+    this.setup("inject-updates-section", () => {
+      const disposeView = this.inject({
+        name: UPDATES_VIEW,
+        modulePath: "./src/views/panels/updates-panel.tsx",
         meta: { kind: "view", label: "Updates" },
       });
       void this.ctx.settingsRegistry.registerSection({
@@ -89,7 +62,7 @@ export class SettingsViewsService extends Service.create({
       });
       return () => {
         void this.ctx.settingsRegistry.unregisterSection({ id: UPDATES_SECTION_ID });
-        void this.ctx.viewRegistry.unregisterView(UPDATES_VIEW);
+        disposeView();
       };
     });
   }

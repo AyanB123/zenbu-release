@@ -155,7 +155,6 @@ export class PiCommandsService extends Service.create({
 
     this.setup("advise-composer-input", () =>
       this.advise({
-        view: "*",
         moduleId: "components/composer/composer.tsx",
         name: "Composer",
         type: "around",

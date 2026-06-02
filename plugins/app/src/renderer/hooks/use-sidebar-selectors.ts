@@ -1,5 +1,5 @@
 import { useMemo } from "react"
-import { useDb } from "@zenbujs/core/react"
+import { useDb, useInjections } from "@zenbujs/core/react"
 import type { WorkspaceRailEntry } from "../components/layout/workspace-rail"
 import { useActiveScopeId, useActiveView, useActiveWorkspaceId } from "@/lib/window-state/active-view"
 import { scopeForChat } from "@/lib/sidebar-helpers"
@@ -73,13 +73,11 @@ export function useHasAnyWorkspace(): boolean {
  * source the command palette uses. */
 export function useGlobalViewLabel(): string {
   const activeView = useActiveView()
-  return useDb(root => {
-    if (activeView.kind !== "view") return ""
-    const entry = (root.core.lastKnownViewRegistry ?? []).find(
-      v => v.type === activeView.viewType,
-    )
-    return entry?.meta?.label ?? activeView.viewType
-  })
+  const injections = useInjections()
+  if (activeView.kind !== "view") return ""
+  const entry = injections.find(v => v.name === activeView.viewType)
+  const label = entry?.meta?.label
+  return typeof label === "string" ? label : activeView.viewType
 }
 
 /** Worktree-group listing for the active workspace. Groups follow

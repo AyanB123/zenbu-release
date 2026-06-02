@@ -29,29 +29,6 @@ type ComposerPropsWithExtensions = {
 // (`root.piCommands.panels[composerId]`) and is closed via the
 // `closePanel` RPC. The host composer no longer carries those props.
 
-type SessionsRpc = {
-  app: {
-    sessions: {
-      navigateTree(args: {
-        sessionId: string
-        entryId: string
-        summarize?: boolean
-        customInstructions?: string
-      }): Promise<unknown>
-      forkAtUserMessage(args: {
-        sessionId: string
-        entryId: string
-        windowId: string
-      }): Promise<unknown>
-    }
-  }
-  piCommands: {
-    piCommands: {
-      closePanel(args: { composerId: string }): Promise<{ ok: true }>
-    }
-  }
-}
-
 const piCommandInputExtension = EditorView.domEventHandlers({
   focus(_event, view) {
     view.dom.dataset.piCommandsInput = "true"
@@ -92,25 +69,24 @@ function PiCommandPanelView({
   panel: Panel
   composerId: string
 }) {
-  const rpc = useRpc() as unknown as SessionsRpc
+  const rpc = useRpc()
   const close = () =>
     void rpc.piCommands.piCommands.closePanel({ composerId })
 
   if (panel.kind === "info") {
     return <PiCommandInfoPanel panel={panel} onClose={close} />
   }
-  return <PiTreeForkPanel panel={panel} onClose={close} rpc={rpc} />
+  return <PiTreeForkPanel panel={panel} onClose={close} />
 }
 
 function PiTreeForkPanel({
   panel,
   onClose,
-  rpc,
 }: {
   panel: Extract<Panel, { kind: "tree" } | { kind: "fork" }>
   onClose: () => void
-  rpc: SessionsRpc
 }) {
+  const rpc = useRpc()
   const session = useDb(root => root.app.sessions[panel.sessionId])
   const refreshKey = session?.lastActivityAt ?? 0
   const activeLeafId = session?.currentLeafEntryId ?? null

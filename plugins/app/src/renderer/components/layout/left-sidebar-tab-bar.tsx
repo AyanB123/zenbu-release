@@ -13,7 +13,7 @@ export type LeftSidebarTabBarProps = {
  * left-sidebar view, in registration order. Every tab — chat
  * list included — is plugin-contributed: a view registered with
  * `meta.kind === "left-sidebar"` shows up here, and the host
- * routes the active tab through `<View type={tabId} />` (see
+ * routes the active tab through `<View name={tabId} />` (see
  * `workspace-shell/left-sidebar.tsx`).
  *
  * No built-in entries: adding or removing a tab is purely a

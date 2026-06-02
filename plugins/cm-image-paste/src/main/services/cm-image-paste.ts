@@ -13,9 +13,9 @@ export class CmImagePasteService extends Service.create({
 }) {
   evaluate() {
     this.setup("inject-register", () =>
-      this.injectContentScript({
-        view: "*",
-        modulePath: "src/content/register.tsx",
+      this.inject({
+        name: "cm-image-paste/bootstrap",
+        modulePath: "./src/content/register.tsx",
       }),
     );
   }

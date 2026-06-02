@@ -51,6 +51,16 @@ export function useSidebarActions() {
   }
 
   const createChatInScope = useStableCallback((scopeId: string) => {
+    const root = dbClient.readRoot()
+    const latest = Object.values(root.app.chats)
+      .filter(c => c.scopeId === scopeId)
+      .sort((a, b) => b.createdAt - a.createdAt)[0]
+    const latestHasMessage = latest?.session.kind === "ready" && root.app.sessionMeta[latest.session.sessionId] != null
+    if (latest && !latestHasMessage) {
+      void dbClient.update(r => selectChatInRoot(r, windowId, latest.id)).then(() => requestFocusComposer(latest.id))
+      return
+    }
+
     const chatId = nanoid()
     const now = Date.now()
     void dbClient

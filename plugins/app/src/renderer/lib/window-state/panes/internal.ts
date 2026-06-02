@@ -9,7 +9,6 @@ import type {
 import { ensureWindowState } from "../ensure"
 import { latestChatIdInScope } from "../derived"
 
-/** Build a fresh tab. */
 export function makeTab(id: string, content: PaneTabContent): PaneTabView {
   return { id, content }
 }
@@ -22,7 +21,6 @@ export function setTabContent(
   return { id: tab.id, content: nextContent }
 }
 
-/** Extract the chatId from a tab, or `null` for view tabs. */
 export function chatIdOf(
   tab: { content: { kind: string; chatId?: string | null } } | null | undefined,
 ): string | null {

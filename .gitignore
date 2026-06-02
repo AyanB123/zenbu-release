@@ -12,7 +12,12 @@ node_modules/.zenbujs/
 # Local-only TS overrides
 tsconfig.local.json
 
-# Per-developer local plugin overlay (loaded via `localPlugins` in zenbu.config.ts)
+# Per-developer local plugin overlay (declared via `pluginsFiles` in zenbu.config.ts).
+# Lets you locally enable/disable plugins without touching the tracked manifest.
+zenbu.plugins.local.jsonc
+
+# Legacy TS overlay format — still ignored so any stale file from a previous
+# checkout doesn't accidentally get committed. Inert as of the JSONC migration.
 zenbu.local.ts
 
 # Env files (keep .env.example tracked)

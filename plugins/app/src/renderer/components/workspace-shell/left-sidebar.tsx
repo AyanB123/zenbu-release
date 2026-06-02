@@ -47,7 +47,7 @@ export function LeftSidebar() {
           }
         >
           <View
-            type={leftSidebarTab}
+            name={leftSidebarTab}
             args={{ scopeId: activeScopeId }}
             className="size-full"
             fallback={

@@ -4,22 +4,18 @@ import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
 import { execFile } from "node:child_process"
-import { fileURLToPath } from "node:url"
 import { Service } from "@zenbujs/core/runtime"
 import {
   DbService,
   RpcService,
   ShortcutsService,
-  ViewRegistryService,
 } from "@zenbujs/core/services"
 import type { InferSchemaRoot } from "@zenbujs/core/db"
 import openInSchema from "../schema"
 
 const IS_MAC = process.platform === "darwin"
 
-const here = path.dirname(fileURLToPath(import.meta.url))
-const VIEW_SOURCE = path.resolve(here, "../../views/open-in-button-view.tsx")
-const VIEW_TYPE = "open-in-button"
+const NAME = "open-in-button"
 
 const execFileP = promisify(execFile)
 
@@ -132,7 +128,6 @@ export class OpenInService extends Service.create({
     db: DbService,
     rpc: RpcService,
     shortcuts: ShortcutsService,
-    viewRegistry: ViewRegistryService,
     // String-keyed handle to `plugins/app`'s `PaletteActionsService`.
     // Resolved at runtime so we don't have to import a host-private
     // class \u2014 same trick `searchRecentWorkspaces` uses.
@@ -142,21 +137,17 @@ export class OpenInService extends Service.create({
   evaluate() {
     // Register the title-bar component view alongside the indexer
     // so the plugin only has one main-process service to wire.
-    this.setup("register-view", () => {
-      void this.ctx.viewRegistry.registerView({
-        type: VIEW_TYPE,
-        rendering: "component",
-        source: { modulePath: VIEW_SOURCE },
+    this.setup("inject-view", () =>
+      this.inject({
+        name: NAME,
+        modulePath: "./src/views/open-in-button-view.tsx",
         meta: {
           kind: "title-bar",
-          titleBarOrder: 1,
+          order: 1,
           label: "Open in",
         },
-      })
-      return () => {
-        void this.ctx.viewRegistry.unregisterView(VIEW_TYPE)
-      }
-    })
+      }),
+    )
 
     // --- Keyboard shortcut: Cmd+Shift+O \u2192 emit `openDefault`. ----------
     //

@@ -70,7 +70,7 @@ export type Events = {
     message: string;
   };
   pluginDevRunExit: { runId: string; exitCode: number | null };
-  /** Result of `installLocal` (writing the path into `zenbu.local.ts`). */
+  /** Result of `installLocal` (writing the path into `zenbu.plugins.local.jsonc`). */
   pluginDevInstallDone: {
     pluginPath: string;
     ok: boolean;

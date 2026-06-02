@@ -1,8 +1,6 @@
 import { Service } from "@zenbujs/core/runtime"
 import {
   DbService,
-  RendererHostService,
-  ViewRegistryService,
   WindowService,
 } from "@zenbujs/core/services"
 import { buildContextMenuPrepend } from "../lib/context-menu-prepend"
@@ -25,23 +23,17 @@ const CHAT_WINDOW_ID = "chat-stack"
 export class ChatWindowService extends Service.create({
   key: "chatWindow",
   deps: {
-    viewRegistry: ViewRegistryService,
     window: WindowService,
     db: DbService,
-    // Order-only: `registerView({ source: { pathPrefix } })` needs the renderer's vite
     // server live before we point at one of its sub-paths.
-    rendererHost: RendererHostService,
   },
 }) {
   evaluate() {
     this.setup("register-view", () =>
-      this.registerView({
-        type: "chat-window",
-        rendering: "component",
-        source: {
-          modulePath: "src/renderer/views/chat-window/chat-window-app.tsx",
-          exportName: "ChatWindowApp",
-        },
+      this.inject({
+        name: "chat-window",
+        modulePath: "src/renderer/views/chat-window/chat-window-app.tsx",
+        exportName: "ChatWindowApp",
         meta: { kind: "view", label: "Chat" },
       }),
     )
@@ -65,8 +57,8 @@ export class ChatWindowService extends Service.create({
       root.app.chatWindows[CHAT_WINDOW_ID] = state
     })
 
-    return this.ctx.window.openView({
-      type: "chat-window",
+    return this.ctx.window.openWindow({
+      injection: "chat-window",
       windowId: CHAT_WINDOW_ID,
       baseWindow: {
         width: 820,

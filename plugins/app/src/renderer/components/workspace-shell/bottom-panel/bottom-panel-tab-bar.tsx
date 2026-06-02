@@ -1,3 +1,4 @@
+import { XIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { HoverTip } from "@zenbu/ui/hover-tip"
 import type { BottomPanelViewEntry } from "@/lib/bottom-panel-views"
@@ -6,24 +7,38 @@ export type BottomPanelTabBarProps = {
   views: BottomPanelViewEntry[]
   activeType: string
   onSelect: (type: string) => void
+  /** Collapse the panel (X button at the top of the strip). */
+  onClose: () => void
 }
 
 /**
  * Vertical icon strip rendered on the right edge of the bottom panel.
  * Mirrors the right sidebar's horizontal tab bar but stacks the icons
  * top-to-bottom because the bottom panel is wide and short. One
- * button per registered bottom-panel view.
+ * button per registered bottom-panel view, with a close (X) button
+ * pinned at the very top.
  */
 export function BottomPanelTabBar({
   views,
   activeType,
   onSelect,
+  onClose,
 }: BottomPanelTabBarProps) {
   return (
     <div
       className="flex h-full w-8 shrink-0 flex-col items-center gap-1 border-l bg-background py-1"
       style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
     >
+      <HoverTip label="Close panel" side="left" setAriaLabel={false}>
+        <button
+          type="button"
+          aria-label="Close panel"
+          onClick={onClose}
+          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+        >
+          <XIcon className="size-[14px]" />
+        </button>
+      </HoverTip>
       {views.map(view => {
         const isActive = view.type === activeType
         return (

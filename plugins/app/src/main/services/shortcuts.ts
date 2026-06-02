@@ -195,8 +195,15 @@ export class ShortcutsService_App extends Service.create({
   // here; they're now auto-registered by `<ListNav
   // id="agent-sidebar">` via the `listNav` service (see
   // `services/list-nav.ts` and `packages/ui/src/list-nav.tsx`).
-  openSettings() {
-    this.ctx.rpc.emit.app.openSettings({ source: "action" })
+  openSettings(args?: {
+    tab?: "general" | "accounts" | "shortcuts" | "plugins"
+    sectionId?: string
+  }) {
+    this.ctx.rpc.emit.app.openSettings({
+      source: "action",
+      ...(args?.tab ? { tab: args.tab } : {}),
+      ...(args?.sectionId ? { sectionId: args.sectionId } : {}),
+    })
   }
 
   // Terminal-context handlers (gated by `when: "app.terminal"` or

@@ -1,7 +1,5 @@
 import { Service } from "@zenbujs/core/runtime"
 import {
-  RendererHostService,
-  ViewRegistryService,
 } from "@zenbujs/core/services"
 
 /**
@@ -14,21 +12,15 @@ import {
 export class PiEventLogService extends Service.create({
   key: "piEventLog",
   deps: {
-    viewRegistry: ViewRegistryService,
-    // Order-only: `registerView({ source: { pathPrefix } })` needs the renderer's vite
     // server live before we point at one of its sub-paths.
-    rendererHost: RendererHostService,
   },
 }) {
   evaluate() {
     this.setup("register-view", () =>
-      this.registerView({
-        type: "pi-event-log",
-        rendering: "component",
-        source: {
-          modulePath: "src/renderer/views/pi-event-log/pi-event-log-app.tsx",
-          exportName: "PiEventLogApp",
-        },
+      this.inject({
+        name: "pi-event-log",
+        modulePath: "src/renderer/views/pi-event-log/pi-event-log-app.tsx",
+        exportName: "PiEventLogApp",
         meta: { kind: "view", label: "Pi Events" },
       }),
     )

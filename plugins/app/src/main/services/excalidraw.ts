@@ -1,7 +1,5 @@
 import { Service } from "@zenbujs/core/runtime"
 import {
-  RendererHostService,
-  ViewRegistryService,
 } from "@zenbujs/core/services"
 
 /**
@@ -13,21 +11,15 @@ import {
 export class ExcalidrawService extends Service.create({
   key: "excalidraw",
   deps: {
-    viewRegistry: ViewRegistryService,
-    // Order-only: registerView({ source: { pathPrefix } }) needs the renderer's vite
     // server to already be live.
-    rendererHost: RendererHostService,
   },
 }) {
   evaluate() {
     this.setup("register-view", () =>
-      this.registerView({
-        type: "excalidraw",
-        rendering: "component",
-        source: {
-          modulePath: "src/renderer/views/excalidraw/excalidraw-app.tsx",
-          exportName: "ExcalidrawApp",
-        },
+      this.inject({
+        name: "excalidraw",
+        modulePath: "src/renderer/views/excalidraw/excalidraw-app.tsx",
+        exportName: "ExcalidrawApp",
         meta: { kind: "view", label: "Excalidraw" },
       }),
     )

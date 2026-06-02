@@ -94,7 +94,7 @@ function WorkspaceTitleBarGlobalView() {
 }
 
 /** Mounts every plugin-contributed title-bar view in ascending
- * `meta.titleBarOrder`. Each view receives the same `args` and
+ * `meta.order`. Each view receives the same `args` and
  * is responsible for deciding whether to render.
  *
  * Implemented as its own component so the parent only re-renders
@@ -106,7 +106,7 @@ function TitleBarPluginSlots({ args }: { args: TitleBarViewArgs }) {
   return (
     <>
       {views.map(v => (
-        <View key={v.type} type={v.type} args={args} />
+        <View key={v.type} name={v.type} args={args} />
       ))}
     </>
   )

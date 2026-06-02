@@ -9,50 +9,11 @@
  * version, install count, last-updated timestamp, tags, and a long
  * description so the detail page has something to render.
  *
- * Each plugin id also has a matching
- * `./mock-screenshots/<id>.png` produced by
- * `scripts/gen-plugin-screenshots.sh`. The marketplace view uses
- * those as the card thumbnail; the URL map below resolves them
- * through Vite so the bundler picks them up as assets.
+ * Thumbnail screenshots are optional. This branch no longer ships the
+ * old `./mock-screenshots/*.png` assets, so the sidebar falls back to
+ * the colored glyph tiles each plugin already defines.
  */
-import linearTrackerScreenshot from "./mock-screenshots/linear-tracker.png"
-import markdownPreviewScreenshot from "./mock-screenshots/markdown-preview.png"
-import branchWidgetScreenshot from "./mock-screenshots/branch-widget.png"
-import colorPickerScreenshot from "./mock-screenshots/color-picker.png"
-import aiSearchScreenshot from "./mock-screenshots/ai-search.png"
-import snippetsScreenshot from "./mock-screenshots/snippets.png"
-import regexLabScreenshot from "./mock-screenshots/regex-lab.png"
-import moodboardScreenshot from "./mock-screenshots/moodboard.png"
-import focusTimerScreenshot from "./mock-screenshots/focus-timer.png"
-import translateScreenshot from "./mock-screenshots/translate.png"
-import teamPresenceScreenshot from "./mock-screenshots/team-presence.png"
-import teamDeployScreenshot from "./mock-screenshots/team-deploy.png"
-import teamHandbookScreenshot from "./mock-screenshots/team-handbook.png"
-import mineTasklogScreenshot from "./mock-screenshots/mine-tasklog.png"
-import mineShortcutsScreenshot from "./mock-screenshots/mine-shortcuts.png"
-
-/**
- * Map from plugin id → imported screenshot URL. Vite's import-as-URL
- * handling means each entry resolves to a hashed asset path the
- * dev server / production build can serve.
- */
-export const SCREENSHOTS: Record<string, string> = {
-  "linear-tracker": linearTrackerScreenshot,
-  "markdown-preview": markdownPreviewScreenshot,
-  "branch-widget": branchWidgetScreenshot,
-  "color-picker": colorPickerScreenshot,
-  "ai-search": aiSearchScreenshot,
-  snippets: snippetsScreenshot,
-  "regex-lab": regexLabScreenshot,
-  moodboard: moodboardScreenshot,
-  "focus-timer": focusTimerScreenshot,
-  translate: translateScreenshot,
-  "team-presence": teamPresenceScreenshot,
-  "team-deploy": teamDeployScreenshot,
-  "team-handbook": teamHandbookScreenshot,
-  "mine-tasklog": mineTasklogScreenshot,
-  "mine-shortcuts": mineShortcutsScreenshot,
-}
+export const SCREENSHOTS: Record<string, string> = {}
 export type CategoryId =
   | "productivity"
   | "developer"

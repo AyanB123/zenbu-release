@@ -118,7 +118,6 @@ export function PlanApp() {
           style={{
             fontSize: 10,
             letterSpacing: "0.08em",
-            textTransform: "uppercase",
             opacity: 0.55,
           }}
         >

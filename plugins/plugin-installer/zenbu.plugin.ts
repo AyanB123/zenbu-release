@@ -9,7 +9,7 @@ import { definePlugin } from "@zenbujs/core/config"
  *
  *   1. `git clone`s the repo into `~/.zenbu/plugins/<name>`.
  *   2. Runs `pnpm install` using the bundled pnpm toolchain.
- *   3. Patches the user's `zenbu.local.ts` (the gitignored local
+ *   3. Patches the user's `zenbu.plugins.local.jsonc` (the gitignored local
  *      overlay) to add the new plugin path. The host's hot-reloader
  *      picks the change up automatically — no restart needed.
  *

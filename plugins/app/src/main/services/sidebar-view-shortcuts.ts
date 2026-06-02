@@ -1,26 +1,23 @@
 import { Service, runtime } from "@zenbujs/core/runtime"
-import {
-  DbService,
-  RpcService,
-  ShortcutsService,
-} from "@zenbujs/core/services"
+import { getInjections, subscribeInjections } from "@zenbujs/core/advice"
+import { RpcService, ShortcutsService } from "@zenbujs/core/services"
 import type { ShortcutBinding } from "@zenbujs/core/schema"
 import { PaletteActionsService } from "./palette-actions"
 
 /**
- * Auto-registers a shortcut + palette action for every plugin view
- * that contributes itself to the left or right sidebar. The
- * registration set is rebuilt whenever
- * `core.lastKnownViewRegistry` changes so plugins loaded /
- * unloaded at runtime get / lose their entry without a reload.
+ * Auto-registers a shortcut + palette action for every plugin
+ * injection that contributes itself to the left or right sidebar.
+ * The registration set is rebuilt whenever the injection registry
+ * changes so plugins loaded / unloaded at runtime get / lose their
+ * entry without a reload.
  *
- * Detection rules (mirroring `useSidebarViews` / `useLeftSidebarViews`
- * in the renderer):
+ * Detection rules (mirroring `useSidebarViews` /
+ * `useLeftSidebarViews` in the renderer):
  *
  *   - `meta.kind === "left-sidebar"`  -> left-sidebar entry
- *   - `meta.sidebar === true`         -> right-sidebar entry
+ *   - `meta.kind === "right-sidebar"` -> right-sidebar entry
  *
- * A view that satisfies both gets one registration per side. Action
+ * A view tagged both gets one registration per side. Action
  * id is `app.openSidebarView.<kind>.<viewType>` and both surfaces
  * (keyboard shortcut + command palette) dispatch the same
  * `app.openSidebarView` event. The renderer handles the actual
@@ -43,7 +40,6 @@ export class SidebarViewShortcutsService extends Service.create({
     rpc: RpcService,
     shortcuts: ShortcutsService,
     paletteActions: PaletteActionsService,
-    db: DbService,
   },
 }) {
   evaluate() {
@@ -60,26 +56,23 @@ export class SidebarViewShortcutsService extends Service.create({
         }
         unsubs = []
 
-        const root = this.ctx.db.client.readRoot()
-        const registry = root.core.lastKnownViewRegistry ?? []
-
-        for (const entry of registry) {
+        for (const entry of getInjections()) {
           const meta = entry.meta
           if (!meta) continue
 
           const sides: Array<"left" | "right"> = []
           if (meta.kind === "left-sidebar") sides.push("left")
-          if (meta.sidebar === true) sides.push("right")
+          if (meta.kind === "right-sidebar") sides.push("right")
           if (sides.length === 0) continue
 
           const label =
             typeof meta.label === "string" && meta.label.length > 0
               ? meta.label
-              : formatLabel(entry.type)
+              : formatLabel(entry.name)
           const defaultBinding = readDefaultBinding(meta)
 
           for (const kind of sides) {
-            const id = `app.openSidebarView.${kind}.${entry.type}`
+            const id = `app.openSidebarView.${kind}.${entry.name}`
             const name = `Open ${label} (${kind === "left" ? "Left" : "Right"} Sidebar)`
             const description = `Open the ${label} view in the ${kind} sidebar. Press again to hide it.`
 
@@ -92,7 +85,7 @@ export class SidebarViewShortcutsService extends Service.create({
                 defaultBinding,
                 handler: () => {
                   this.ctx.rpc.emit.app.openSidebarView({
-                    viewType: entry.type,
+                    viewType: entry.name,
                     kind,
                     source: "shortcut",
                   })
@@ -111,7 +104,7 @@ export class SidebarViewShortcutsService extends Service.create({
                   service: "sidebar-view-shortcuts",
                   method: "dispatch",
                 },
-                args: { viewType: entry.type, kind },
+                args: { viewType: entry.name, kind },
               })
               .catch(() => {})
             unsubs.push(() => {
@@ -124,15 +117,10 @@ export class SidebarViewShortcutsService extends Service.create({
       }
 
       reregister()
-
-      // Re-register whenever the registry mirror updates so plugins
-      // hot-loaded / hot-unloaded at runtime pick up / drop their
+      // Re-register whenever the injection registry changes so
+      // plugins hot-loaded / hot-unloaded pick up / drop their
       // entry without a reload.
-      const off = this.ctx.db.client.core.lastKnownViewRegistry.subscribe(
-        () => {
-          reregister()
-        },
-      )
+      const off = subscribeInjections(reregister)
 
       return () => {
         off()

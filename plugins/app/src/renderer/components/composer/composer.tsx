@@ -7,7 +7,7 @@ import {
   drawSelection,
 } from "@codemirror/view"
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands"
-import { useDbClient, useEvents, useFunctions, useRpc } from "@zenbujs/core/react"
+import { useDbClient, useEvents, useInjections, useRpc } from "@zenbujs/core/react"
 import type { ImageContent } from "@earendil-works/pi-ai"
 import { subscribeFocusComposer } from "@/lib/focus-composer"
 import {
@@ -329,21 +329,34 @@ export function Composer({
   // The `codeMirrorExtensions` prop is a legacy advice surface and
   // is treated like the editable kind so a `readOnly` composer
   // never picks up extensions that don't make sense for it.
-  const alwaysContributed = useFunctions<Extension>({
+  const alwaysContributed = useInjections<Extension>({
     kind: "cm.composer-extension",
   })
-  const editableContributed = useFunctions<Extension>({
+  // Markdown live-preview lives in its own surface-agnostic slot
+  // (also consumed by the standalone MarkdownEditor). Applied to
+  // every composer, including readOnly renders.
+  const markdownContributed = useInjections<Extension>({
+    kind: "cm.markdown-extension",
+  })
+  const editableContributed = useInjections<Extension>({
     kind: "cm.composer-extension-editable",
   })
   const mergedContributed = useMemo<readonly Extension[]>(() => {
     const out: Extension[] = []
-    for (const entry of alwaysContributed) out.push(entry.fn)
+    for (const entry of alwaysContributed) out.push(entry.value)
+    for (const entry of markdownContributed) out.push(entry.value)
     if (!readOnly) {
       out.push(...(codeMirrorExtensions ?? []))
-      for (const entry of editableContributed) out.push(entry.fn)
+      for (const entry of editableContributed) out.push(entry.value)
     }
     return out
-  }, [codeMirrorExtensions, alwaysContributed, editableContributed, readOnly])
+  }, [
+    codeMirrorExtensions,
+    alwaysContributed,
+    markdownContributed,
+    editableContributed,
+    readOnly,
+  ])
   const readOnlyRef = useRef(readOnly)
   readOnlyRef.current = readOnly
   const embeddedRef = useRef(embedded)

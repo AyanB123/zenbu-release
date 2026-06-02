@@ -1,10 +1,14 @@
 function scheduleIdleWork(callback: () => void): void {
-  if ("requestIdleCallback" in window) {
-    window.requestIdleCallback(callback, { timeout: 2000 })
+  const w = window as Window &
+    typeof globalThis & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => void
+    }
+  if (typeof w.requestIdleCallback === "function") {
+    w.requestIdleCallback(callback, { timeout: 2000 })
     return
   }
 
-  window.setTimeout(callback, 250)
+  w.setTimeout(callback, 250)
 }
 
 function reactScanEnabled(): boolean {

@@ -14,7 +14,7 @@ import { definePlugin } from "@zenbujs/core/config"
  *     `pluginDevRunError` events the button subscribes to and
  *     toasts.
  *   - **Install Plugin**: appends the plugin's manifest path to the
- *     user's `zenbu.local.ts` overlay, using the same patch logic
+ *     user's `zenbu.plugins.local.jsonc` overlay, using the same patch logic
  *     `plugin-installer` ships. An info popover next to the button
  *     reminds the user this only installs into their main
  *     application.

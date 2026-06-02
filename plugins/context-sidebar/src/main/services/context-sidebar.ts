@@ -1,15 +1,7 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { Service } from "@zenbujs/core/runtime";
-import { DbService, ViewRegistryService } from "@zenbujs/core/services";
+import { DbService } from "@zenbujs/core/services";
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const VIEW_SOURCE = path.resolve(
-  here,
-  "../../views/context-sidebar-view.tsx",
-);
-
-const VIEW_TYPE = "context-sidebar";
+const NAME = "context-sidebar";
 const ADD_DIR_COMMAND_ID = "contextSidebar:add-dir";
 
 /* ----------------------------- ambient deps ---------------------------- */
@@ -93,30 +85,24 @@ export class ContextSidebarService extends Service.create({
   key: "contextSidebar",
   deps: {
     db: DbService,
-    viewRegistry: ViewRegistryService,
     slashCommands: "slashCommands",
     dialog: "dialog",
   },
 }) {
   evaluate() {
-    this.setup("register-view", () => {
-      void this.ctx.viewRegistry.registerView({
-        type: VIEW_TYPE,
-        rendering: "component",
-        source: { modulePath: VIEW_SOURCE },
+    this.setup("inject-view", () =>
+      this.inject({
+        name: NAME,
+        modulePath: "./src/views/context-sidebar-view.tsx",
         meta: {
-          kind: "view",
-          sidebar: true,
+          kind: "right-sidebar",
           label: "Context",
           // Default per-view shortcut picked up by
           // `SidebarViewShortcutsService`.
           shortcut: { mod: true, shift: true, key: "k" },
         },
-      });
-      return () => {
-        void this.ctx.viewRegistry.unregisterView(VIEW_TYPE);
-      };
-    });
+      }),
+    );
 
     this.setup("register-add-dir-slash-command", () => {
       const registry = this.ctx.slashCommands as SlashRegistry;

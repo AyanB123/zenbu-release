@@ -106,6 +106,10 @@ export const workspace = z.object({
    * when the user hasn't picked one. `null` falls back to the main
    * worktree's current branch. */
   defaultWorktreeBranch: z.string().nullable().default(null),
+  /** Marks the auto-seeded onboarding "Playground" workspace
+   * (at most one). Owned by `PlaygroundService`; otherwise a
+   * regular workspace. */
+  playground: z.boolean().default(false),
 });
 
 // ---------------------------------------------------------------------------

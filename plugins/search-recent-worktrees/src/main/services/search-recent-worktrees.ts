@@ -68,9 +68,9 @@ export class SearchRecentWorktreesService extends Service.create({
     })
 
     this.setup("inject-palette", () =>
-      this.injectContentScript({
-        view: "entrypoint",
-        modulePath: "src/content/recent-worktrees-palette.tsx",
+      this.inject({
+        name: "searchRecentWorktrees/palette",
+        modulePath: "./src/content/recent-worktrees-palette.tsx",
       }),
     )
   }
