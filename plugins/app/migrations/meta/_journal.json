@@ -434,6 +434,12 @@
       "tag": "migration",
       "when": 1780556279896,
       "file": "migration_1780556279896"
+    },
+    {
+      "idx": 80,
+      "tag": "enable_workspace_rail_main_window",
+      "when": 1780569614818,
+      "file": "enable_workspace_rail_main_window_1780569614818"
     }
   ]
 }
