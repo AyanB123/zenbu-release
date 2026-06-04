@@ -1,64 +1,66 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useCollection,
   useDb,
   useDbClient,
   useEvents,
   useRpc,
-} from "@zenbujs/core/react"
-import type { DbClient } from "@zenbujs/core/react"
-import { Button } from "@zenbu/ui/button"
-import { Input } from "@zenbu/ui/input"
-import { cn } from "@zenbu/ui/utils"
-import type { MarketplaceListing } from "../main/services/marketplace"
+} from "@zenbujs/core/react";
+import type { DbClient } from "@zenbujs/core/react";
+import { Button } from "@zenbu/ui/button";
+import { Input } from "@zenbu/ui/input";
+import { cn } from "@zenbu/ui/utils";
+import type { MarketplaceListing } from "../main/services/marketplace";
 import {
   useInstalledPlugins,
   type InstalledPluginListing,
-} from "../lib/plugin-enabled-store"
+} from "../lib/plugin-enabled-store";
 
-const SIDEBAR_FOOTER_HEIGHT = 44
-const SIDEBAR_FOOTER_FADE = 24
-const BODY_BOTTOM_PAD = SIDEBAR_FOOTER_HEIGHT + SIDEBAR_FOOTER_FADE
+const SIDEBAR_FOOTER_HEIGHT = 44;
+const SIDEBAR_FOOTER_FADE = 24;
+const BODY_BOTTOM_PAD = SIDEBAR_FOOTER_HEIGHT + SIDEBAR_FOOTER_FADE;
 
-const SWAP_MS = 220
+const SWAP_MS = 220;
 
-const PLUGIN_NAME_RE = /^[a-z][a-z0-9-]*$/
+const PLUGIN_NAME_RE = /^[a-z][a-z0-9-]*$/;
 
 // View type of the per-plugin detail pane (kept in sync with
 // `DETAIL_NAME` in the marketplace service). Used to derive which
 // plugin row should read as "active" in the sidebar.
-const DETAIL_VIEW_TYPE = "plugin-detail"
+const DETAIL_VIEW_TYPE = "plugin-detail";
 
 // Plugin id shown in an open `plugin-detail` pane, or null. Sidebar
 // views get no windowId, so (like git-tree) we walk windowStates and
 // take the first window with a detail pane, preferring its active
 // pane so the highlight survives focusing a different pane.
 function useActiveDetailPluginId(): string | null {
-  return useDb(root => {
+  return useDb((root) => {
     for (const ws of Object.values(root.app.windowStates)) {
-      const scopeId = ws?.selectedScopeId
-      const paneState = scopeId ? ws.scopePanes?.[scopeId] : undefined
-      if (!paneState) continue
+      const scopeId = ws?.selectedScopeId;
+      const paneState = scopeId ? ws.scopePanes?.[scopeId] : undefined;
+      if (!paneState) continue;
       const active = paneState.panes.find(
-        p => p.id === paneState.activePaneId,
-      )
-      for (const pane of active ? [active, ...paneState.panes] : paneState.panes) {
+        (p) => p.id === paneState.activePaneId,
+      );
+      for (const pane of active
+        ? [active, ...paneState.panes]
+        : paneState.panes) {
         const tab =
-          pane.tabs.find(t => t.id === pane.activeTabId) ?? pane.tabs[0]
-        const content = tab?.content
+          pane.tabs.find((t) => t.id === pane.activeTabId) ?? pane.tabs[0];
+        const content = tab?.content;
         if (content?.kind === "view" && content.viewType === DETAIL_VIEW_TYPE) {
-          const id = content.args?.pluginId
-          if (typeof id === "string") return id
+          const id = content.args?.pluginId;
+          if (typeof id === "string") return id;
         }
       }
     }
-    return null
-  })
+    return null;
+  });
 }
 
 export default function MarketplaceSidebarView() {
-  const [query, setQuery] = useState("")
-  const [creating, setCreating] = useState(false)
+  const [query, setQuery] = useState("");
+  const [creating, setCreating] = useState(false);
 
   return (
     <div className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden text-[13px]">
@@ -70,13 +72,10 @@ export default function MarketplaceSidebarView() {
         />
       </SwapPane>
       <SwapPane active={creating} side="create">
-        <CreatePluginPane
-          active={creating}
-          onBack={() => setCreating(false)}
-        />
+        <CreatePluginPane active={creating} onBack={() => setCreating(false)} />
       </SwapPane>
     </div>
-  )
+  );
 }
 
 function SwapPane({
@@ -84,12 +83,12 @@ function SwapPane({
   side,
   children,
 }: {
-  active: boolean
-  side: "list" | "create"
-  children: React.ReactNode
+  active: boolean;
+  side: "list" | "create";
+  children: React.ReactNode;
 }) {
-  const offsetPx = 12
-  const translate = active ? 0 : side === "list" ? -offsetPx : offsetPx
+  const offsetPx = 12;
+  const translate = active ? 0 : side === "list" ? -offsetPx : offsetPx;
   return (
     <div
       aria-hidden={!active}
@@ -103,7 +102,7 @@ function SwapPane({
     >
       {children}
     </div>
-  )
+  );
 }
 
 function ListPane({
@@ -111,52 +110,50 @@ function ListPane({
   onQueryChange,
   onNewPlugin,
 }: {
-  query: string
-  onQueryChange: (q: string) => void
-  onNewPlugin: () => void
+  query: string;
+  onQueryChange: (q: string) => void;
+  onNewPlugin: () => void;
 }) {
-  const lowerQ = query.trim().toLowerCase()
-  const activePluginId = useActiveDetailPluginId()
+  const lowerQ = query.trim().toLowerCase();
+  const activePluginId = useActiveDetailPluginId();
 
-  const marketplaceEnabled = useDb(root => root.plugins.enabled)
+  const marketplaceEnabled = useDb((root) => root.plugins.enabled);
 
-  const installed = useInstalledPlugins()
-  const icons = useDb(root => root.app.pluginIcons) ?? {}
-  const catalog = useDb(root => root.plugins.catalog) ?? {}
+  const installed = useInstalledPlugins();
+  const icons = useDb((root) => root.app.pluginIcons) ?? {};
+  const catalog = useDb((root) => root.plugins.catalog) ?? {};
 
   const filteredInstalled = useMemo(() => {
-    if (!lowerQ) return installed
-    return installed.filter(p =>
-      p.name.toLowerCase().includes(lowerQ),
-    )
-  }, [installed, lowerQ])
+    if (!lowerQ) return installed;
+    return installed.filter((p) => p.name.toLowerCase().includes(lowerQ));
+  }, [installed, lowerQ]);
 
   const installedKeys = useMemo(() => {
-    const set = new Set<string>()
-    for (const p of installed) set.add(p.name.toLowerCase())
-    return set
-  }, [installed])
+    const set = new Set<string>();
+    for (const p of installed) set.add(p.name.toLowerCase());
+    return set;
+  }, [installed]);
 
   // Read the locally-cached browse feed (refreshed by the service).
   // No per-mount fetch -> navigating back is instant, no flash.
-  const feed = useMarketplaceFeed(marketplaceEnabled)
+  const feed = useMarketplaceFeed(marketplaceEnabled);
   const filteredMarketplace = useMemo<MarketplaceListing[]>(() => {
-    return feed.filter(p => {
+    return feed.filter((p) => {
       if (
         installedKeys.has(p.id.toLowerCase()) ||
         installedKeys.has(p.name.toLowerCase())
       ) {
-        return false
+        return false;
       }
-      if (!lowerQ) return true
+      if (!lowerQ) return true;
       return (
         p.name.toLowerCase().includes(lowerQ) ||
         p.description.toLowerCase().includes(lowerQ) ||
         p.author.toLowerCase().includes(lowerQ) ||
-        p.tags.some(t => t.toLowerCase().includes(lowerQ))
-      )
-    })
-  }, [feed, installedKeys, lowerQ])
+        p.tags.some((t) => t.toLowerCase().includes(lowerQ))
+      );
+    });
+  }, [feed, installedKeys, lowerQ]);
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
@@ -214,7 +211,7 @@ function ListPane({
         </SidebarFooter>
       </div>
     </div>
-  )
+  );
 }
 
 function Section({
@@ -222,16 +219,16 @@ function Section({
   defaultOpen = true,
   children,
 }: {
-  label: string
-  defaultOpen?: boolean
-  children: React.ReactNode
+  label: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(defaultOpen)
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="mt-2 first:mt-0 flex flex-col">
       <button
         type="button"
-        onClick={() => setOpen(o => !o)}
+        onClick={() => setOpen((o) => !o)}
         className={cn(
           "group flex min-h-[26px] w-full min-w-0 cursor-default select-none items-center gap-1.5",
           "rounded-md px-1.5 py-1 text-left text-sidebar-foreground",
@@ -247,7 +244,7 @@ function Section({
       </button>
       {open && <div className="mt-0.5">{children}</div>}
     </div>
-  )
+  );
 }
 
 function SectionChevron({ open }: { open: boolean }) {
@@ -268,39 +265,37 @@ function SectionChevron({ open }: { open: boolean }) {
     >
       <polyline points="9 18 15 12 9 6" />
     </svg>
-  )
+  );
 }
 
 // Read the browse feed from the locally-cached collection. The main
 // process keeps it fresh; here we just read replicated state, so it's
 // instant on mount with no fetch/flash.
 function useMarketplaceFeed(enabled: boolean): MarketplaceListing[] {
-  const ref = useDb(root => root.plugins.feed)
-  const { items } = useCollection(
-    enabled ? (ref as Parameters<typeof useCollection>[0]) : null,
-  )
-  return (items as MarketplaceListing[] | undefined) ?? []
+  const ref = useDb((root) => root.plugins.feed);
+  const { items } = useCollection(enabled ? ref : null);
+  return (items ?? []) as MarketplaceListing[];
 }
 
-type PluginEntry = InstalledPluginListing
+type PluginEntry = InstalledPluginListing;
 
 function dirBasename(dir: string): string {
-  return dir.split(/[\\/]/).filter(Boolean).at(-1) ?? dir
+  return dir.split(/[\\/]/).filter(Boolean).at(-1) ?? dir;
 }
 
 type PluginIconRecord = {
-  blobId: string
-  mime: string
-  sourcePath: string
-  hash: string
-}
+  blobId: string;
+  mime: string;
+  sourcePath: string;
+  hash: string;
+};
 
 function MarketplaceMeta({
   author,
   downloadCount,
 }: {
-  author: string
-  downloadCount: number
+  author: string;
+  downloadCount: number;
 }) {
   return (
     <>
@@ -323,7 +318,7 @@ function MarketplaceMeta({
         {formatCount(downloadCount)}
       </span>
     </>
-  )
+  );
 }
 
 function InstalledList({
@@ -332,42 +327,42 @@ function InstalledList({
   catalog,
   activePluginId,
 }: {
-  installed: PluginEntry[]
-  icons: Record<string, PluginIconRecord>
-  catalog: Record<string, MarketplaceListing>
-  activePluginId: string | null
+  installed: PluginEntry[];
+  icons: Record<string, PluginIconRecord>;
+  catalog: Record<string, MarketplaceListing>;
+  activePluginId: string | null;
 }) {
   const sorted = useMemo(() => {
     return [...installed].sort((a, b) =>
       prettifyName(a.name).localeCompare(prettifyName(b.name), undefined, {
         sensitivity: "base",
       }),
-    )
-  }, [installed])
+    );
+  }, [installed]);
 
   // When a plugin newly appears (e.g. just installed), scroll its
   // row into view.
-  const [scrollDir, setScrollDir] = useState<string | null>(null)
-  const prevDirsRef = useRef<Set<string> | null>(null)
+  const [scrollDir, setScrollDir] = useState<string | null>(null);
+  const prevDirsRef = useRef<Set<string> | null>(null);
   useEffect(() => {
-    const curr = new Set(installed.map(p => p.dir))
-    const prev = prevDirsRef.current
-    prevDirsRef.current = curr
-    if (!prev) return
-    const added = installed.find(p => !prev.has(p.dir))
-    if (added) setScrollDir(added.dir)
-  }, [installed])
+    const curr = new Set(installed.map((p) => p.dir));
+    const prev = prevDirsRef.current;
+    prevDirsRef.current = curr;
+    if (!prev) return;
+    const added = installed.find((p) => !prev.has(p.dir));
+    if (added) setScrollDir(added.dir);
+  }, [installed]);
 
   if (sorted.length === 0) {
     return (
       <div className="px-2 py-3 text-center text-[11.5px] text-muted-foreground">
         No plugins installed.
       </div>
-    )
+    );
   }
   return (
     <ul className="flex flex-col gap-0.5">
-      {sorted.map(plugin => (
+      {sorted.map((plugin) => (
         <InstalledRow
           key={`${plugin.kind ?? "plugin"}:${plugin.name}`}
           plugin={plugin}
@@ -379,7 +374,7 @@ function InstalledList({
         />
       ))}
     </ul>
-  )
+  );
 }
 
 function InstalledRow({
@@ -390,29 +385,26 @@ function InstalledRow({
   active,
   scrollTarget,
 }: {
-  plugin: PluginEntry
-  icon: PluginIconRecord | null
-  listing: MarketplaceListing | null
-  enabled: boolean
-  active: boolean
-  scrollTarget: boolean
+  plugin: PluginEntry;
+  icon: PluginIconRecord | null;
+  listing: MarketplaceListing | null;
+  enabled: boolean;
+  active: boolean;
+  scrollTarget: boolean;
 }) {
-  const rpc = useRpc()
+  const rpc = useRpc();
   const onClick = () => {
     void rpc.plugins.marketplace
       .openDetailInPane({ pluginId: plugin.name })
-      .catch(err => {
-        console.error(
-          "[marketplace-sidebar] openDetailInPane failed:",
-          err,
-        )
-      })
-  }
+      .catch((err) => {
+        console.error("[marketplace-sidebar] openDetailInPane failed:", err);
+      });
+  };
   // Name/description/author come from package.json; downloadCount
   // has no config file, so it's read from the cached listing
   // (written on install) to keep the row identical to its
   // marketplace form.
-  const author = plugin.author ?? listing?.author ?? null
+  const author = plugin.author ?? listing?.author ?? null;
   const meta =
     listing != null ? (
       <MarketplaceMeta
@@ -421,7 +413,7 @@ function InstalledRow({
       />
     ) : author ? (
       <span className="min-w-0 truncate">{author}</span>
-    ) : undefined
+    ) : undefined;
   return (
     <PluginRow
       thumb={<InstalledThumb plugin={plugin} icon={icon} />}
@@ -433,40 +425,40 @@ function InstalledRow({
       scrollTarget={scrollTarget}
       onClick={onClick}
     />
-  )
+  );
 }
 
 function InstalledThumb({
   plugin,
   icon,
 }: {
-  plugin: PluginEntry
-  icon: PluginIconRecord | null
+  plugin: PluginEntry;
+  icon: PluginIconRecord | null;
 }) {
-  let inner: React.ReactNode
+  let inner: React.ReactNode;
   if (plugin.kind === "pi-extension") {
     inner = (
       <span className="flex items-center justify-center text-foreground">
         <PiIcon />
       </span>
-    )
+    );
   } else if (!icon) {
     inner = (
       <span className="flex items-center justify-center text-muted-foreground">
         <PuzzleIcon />
       </span>
-    )
+    );
   } else {
-    inner = <InstalledIconImage icon={icon} size={28} />
+    inner = <InstalledIconImage icon={icon} size={28} />;
   }
-  return <ThumbTile>{inner}</ThumbTile>
+  return <ThumbTile>{inner}</ThumbTile>;
 }
 
-const imageCache = new Map<string, string>()
-const imageInflight = new Map<string, Promise<string | null>>()
+const imageCache = new Map<string, string>();
+const imageInflight = new Map<string, Promise<string | null>>();
 
 function getCachedImage(blobId: string): string | null {
-  return imageCache.get(blobId) ?? null
+  return imageCache.get(blobId) ?? null;
 }
 
 async function hydratePluginIcon(
@@ -474,49 +466,51 @@ async function hydratePluginIcon(
   mime: string,
   client: DbClient,
 ): Promise<string | null> {
-  const have = imageCache.get(blobId)
-  if (have) return have
-  const pending = imageInflight.get(blobId)
-  if (pending) return pending
+  const have = imageCache.get(blobId);
+  if (have) return have;
+  const pending = imageInflight.get(blobId);
+  if (pending) return pending;
   const p = (async () => {
     try {
-      const data = await client.getBlobData(blobId)
-      if (!data) return null
-      const blob = new Blob([data as BlobPart], { type: mime })
-      const url = URL.createObjectURL(blob)
-      imageCache.set(blobId, url)
-      return url
+      const data = await client.getBlobData(blobId);
+      if (!data) return null;
+      const blob = new Blob([data as BlobPart], { type: mime });
+      const url = URL.createObjectURL(blob);
+      imageCache.set(blobId, url);
+      return url;
     } finally {
-      imageInflight.delete(blobId)
+      imageInflight.delete(blobId);
     }
-  })()
-  imageInflight.set(blobId, p)
-  return p
+  })();
+  imageInflight.set(blobId, p);
+  return p;
 }
 
 function InstalledIconImage({
   icon,
   size,
 }: {
-  icon: PluginIconRecord
-  size: number
+  icon: PluginIconRecord;
+  size: number;
 }) {
-  const dbClient = useDbClient()
-  const [url, setUrl] = useState<string | null>(() => getCachedImage(icon.blobId))
+  const dbClient = useDbClient();
+  const [url, setUrl] = useState<string | null>(() =>
+    getCachedImage(icon.blobId),
+  );
   useEffect(() => {
-    let cancelled = false
-    if (url) return
-    void hydratePluginIcon(icon.blobId, icon.mime, dbClient).then(u => {
-      if (!cancelled) setUrl(u)
-    })
+    let cancelled = false;
+    if (url) return;
+    void hydratePluginIcon(icon.blobId, icon.mime, dbClient).then((u) => {
+      if (!cancelled) setUrl(u);
+    });
     return () => {
-      cancelled = true
-    }
-  }, [icon.blobId, icon.mime, dbClient, url])
+      cancelled = true;
+    };
+  }, [icon.blobId, icon.mime, dbClient, url]);
   useEffect(() => {
-    setUrl(getCachedImage(icon.blobId))
-  }, [icon.blobId])
-  const dim = `${size}px`
+    setUrl(getCachedImage(icon.blobId));
+  }, [icon.blobId]);
+  const dim = `${size}px`;
   if (!url) {
     return (
       <span
@@ -525,7 +519,7 @@ function InstalledIconImage({
       >
         <PuzzleIcon />
       </span>
-    )
+    );
   }
   return (
     <img
@@ -537,24 +531,24 @@ function InstalledIconImage({
       style={{ width: dim, height: dim, objectFit: "contain" }}
       draggable={false}
     />
-  )
+  );
 }
 
 function prettifyName(name: string): string {
   const spaced = name
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replace(/[-_]+/g, " ")
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
+    .replace(/[-_]+/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
 function initials(name: string): string {
   const parts = name
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .split(/[\s_-]+/)
-    .filter(Boolean)
-  const first = parts[0]?.[0] ?? "P"
-  const second = parts.length > 1 ? parts[1]?.[0] : parts[0]?.[1]
-  return `${first}${second ?? ""}`.toUpperCase()
+    .filter(Boolean);
+  const first = parts[0]?.[0] ?? "P";
+  const second = parts.length > 1 ? parts[1]?.[0] : parts[0]?.[1];
+  return `${first}${second ?? ""}`.toUpperCase();
 }
 
 function ThumbTile({ children }: { children: React.ReactNode }) {
@@ -565,7 +559,7 @@ function ThumbTile({ children }: { children: React.ReactNode }) {
     >
       {children}
     </div>
-  )
+  );
 }
 
 function PluginRow({
@@ -578,23 +572,23 @@ function PluginRow({
   scrollTarget,
   onClick,
 }: {
-  thumb: React.ReactNode
-  title: string
-  description?: string | null
-  meta?: React.ReactNode
-  muted?: boolean
-  active?: boolean
-  scrollTarget?: boolean
-  onClick: () => void
+  thumb: React.ReactNode;
+  title: string;
+  description?: string | null;
+  meta?: React.ReactNode;
+  muted?: boolean;
+  active?: boolean;
+  scrollTarget?: boolean;
+  onClick: () => void;
 }) {
-  const hasDescription = description != null && description !== ""
-  const compact = !hasDescription && !meta
-  const buttonRef = useRef<HTMLButtonElement>(null)
+  const hasDescription = description != null && description !== "";
+  const compact = !hasDescription && !meta;
+  const buttonRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (scrollTarget) {
-      buttonRef.current?.scrollIntoView({ block: "center", inline: "nearest" })
+      buttonRef.current?.scrollIntoView({ block: "center", inline: "nearest" });
     }
-  }, [scrollTarget])
+  }, [scrollTarget]);
   return (
     <li className="contents">
       <button
@@ -635,39 +629,36 @@ function PluginRow({
         </div>
       </button>
     </li>
-  )
+  );
 }
 
 function MarketplaceResults({
   plugins,
   activePluginId,
 }: {
-  plugins: MarketplaceListing[]
-  activePluginId: string | null
+  plugins: MarketplaceListing[];
+  activePluginId: string | null;
 }) {
-  const rpc = useRpc()
+  const rpc = useRpc();
 
   const openDetail = (plugin: MarketplaceListing) => {
     void rpc.plugins.marketplace
       .openDetailInPane({ pluginId: plugin.id })
-      .catch(err => {
-        console.error(
-          "[marketplace-sidebar] openDetailInPane failed:",
-          err,
-        )
-      })
-  }
+      .catch((err) => {
+        console.error("[marketplace-sidebar] openDetailInPane failed:", err);
+      });
+  };
 
   if (plugins.length === 0) {
     return (
       <div className="px-2 py-3 text-center text-[11.5px] text-muted-foreground">
         No matches.
       </div>
-    )
+    );
   }
   return (
     <ul className="flex flex-col gap-0.5">
-      {plugins.map(plugin => (
+      {plugins.map((plugin) => (
         <MarketplaceRow
           key={plugin.id}
           plugin={plugin}
@@ -676,7 +667,7 @@ function MarketplaceResults({
         />
       ))}
     </ul>
-  )
+  );
 }
 
 function MarketplaceRow({
@@ -684,9 +675,9 @@ function MarketplaceRow({
   active,
   onClick,
 }: {
-  plugin: MarketplaceListing
-  active: boolean
-  onClick: () => void
+  plugin: MarketplaceListing;
+  active: boolean;
+  onClick: () => void;
 }) {
   return (
     <PluginRow
@@ -702,129 +693,127 @@ function MarketplaceRow({
       active={active}
       onClick={onClick}
     />
-  )
+  );
 }
 
 type CreatePhase =
   | { kind: "name" }
   | { kind: "running"; runId: string }
-  | { kind: "done"; pluginName: string; pluginDir: string }
+  | { kind: "done"; pluginName: string; pluginDir: string };
 
 function normalizePluginName(raw: string): string {
-  return raw.toLowerCase().replace(/\s+/g, "-").replace(/-+/g, "-")
+  return raw.toLowerCase().replace(/\s+/g, "-").replace(/-+/g, "-");
 }
 
 function CreatePluginPane({
   active,
   onBack,
 }: {
-  active: boolean
-  onBack: () => void
+  active: boolean;
+  onBack: () => void;
 }) {
-  const rpc = useRpc()
-  const events = useEvents()
-  const openedRef = useRef<string | null>(null)
-  const [name, setName] = useState("")
-  const [phase, setPhase] = useState<CreatePhase>({ kind: "name" })
-  const [error, setError] = useState<string | null>(null)
-  const currentRunId = useRef<string | null>(null)
+  const rpc = useRpc();
+  const events = useEvents();
+  const openedRef = useRef<string | null>(null);
+  const [name, setName] = useState("");
+  const [phase, setPhase] = useState<CreatePhase>({ kind: "name" });
+  const [error, setError] = useState<string | null>(null);
+  const currentRunId = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!active) return
-    setName("")
-    setPhase({ kind: "name" })
-    setError(null)
-    openedRef.current = null
-    currentRunId.current = null
+    if (!active) return;
+    setName("");
+    setPhase({ kind: "name" });
+    setError(null);
+    openedRef.current = null;
+    currentRunId.current = null;
     const t = setTimeout(() => {
       const el = document.getElementById(
         "marketplace-plugin-name",
-      ) as HTMLInputElement | null
-      el?.focus()
-    }, SWAP_MS)
-    return () => clearTimeout(t)
-  }, [active])
+      ) as HTMLInputElement | null;
+      el?.focus();
+    }, SWAP_MS);
+    return () => clearTimeout(t);
+  }, [active]);
 
   useEffect(() => {
-    if (!active) return
-    const offDone = events.app.createPluginDone.subscribe(p => {
-      if (p.runId !== currentRunId.current) return
-      currentRunId.current = null
+    if (!active) return;
+    const offDone = events.app.createPluginDone.subscribe((p) => {
+      if (p.runId !== currentRunId.current) return;
+      currentRunId.current = null;
       if (!p.ok) {
-        setError(p.error ?? "create-plugin failed")
-        setPhase({ kind: "name" })
-        return
+        setError(p.error ?? "create-plugin failed");
+        setPhase({ kind: "name" });
+        return;
       }
       if (p.pluginName && p.pluginPath) {
         setPhase({
           kind: "done",
           pluginName: p.pluginName,
           pluginDir: p.pluginPath,
-        })
+        });
       }
-    })
+    });
     return () => {
-      offDone()
-    }
-  }, [active, events])
+      offDone();
+    };
+  }, [active, events]);
 
   useEffect(() => {
-    if (phase.kind !== "done") return
-    if (openedRef.current === phase.pluginName) return
-    openedRef.current = phase.pluginName
+    if (phase.kind !== "done") return;
+    if (openedRef.current === phase.pluginName) return;
+    openedRef.current = phase.pluginName;
     void rpc.app.pluginsRootView
       .openPluginInNewWindow({
         pluginName: phase.pluginName,
         pluginDir: phase.pluginDir,
       })
-      .catch(err => {
+      .catch((err) => {
         console.error(
           "[marketplace-sidebar] auto openPluginInNewWindow failed:",
           err,
-        )
-      })
-  }, [phase, rpc])
+        );
+      });
+  }, [phase, rpc]);
 
-  const trimmedName = name.replace(/^-+|-+$/g, "")
-  const nameValid = PLUGIN_NAME_RE.test(trimmedName)
-  const running = phase.kind === "running"
-  const done = phase.kind === "done"
-  const canSubmit = !running && !done && nameValid
+  const trimmedName = name.replace(/^-+|-+$/g, "");
+  const nameValid = PLUGIN_NAME_RE.test(trimmedName);
+  const running = phase.kind === "running";
+  const done = phase.kind === "done";
+  const canSubmit = !running && !done && nameValid;
 
-  const headerLabel = done
-    ? prettifyName((phase as { pluginName: string }).pluginName)
-    : "Create plugin"
+  const headerLabel = done ? prettifyName(phase.pluginName) : "Create plugin";
 
   const handleOpenWorkspace = () => {
-    if (phase.kind !== "done") return
+    if (phase.kind !== "done") return;
     void rpc.app.pluginsRootView
       .openPluginInNewWindow({
         pluginName: phase.pluginName,
         pluginDir: phase.pluginDir,
       })
-      .catch(err => {
+      .catch((err) => {
         console.error(
           "[marketplace-sidebar] openPluginInNewWindow failed:",
           err,
-        )
-      })
-  }
+        );
+      });
+  };
 
   const handleSubmit = async (e?: React.FormEvent) => {
-    e?.preventDefault()
-    if (!canSubmit) return
-    setError(null)
+    e?.preventDefault();
+    if (!canSubmit) return;
+    setError(null);
     try {
       const { runId } = await rpc.app.createPlugin.createPlugin({
         name: trimmedName,
-      })
-      currentRunId.current = runId
-      setPhase({ kind: "running", runId })
+      });
+      currentRunId.current = runId;
+      setPhase({ kind: "running", runId });
     } catch (err) {
-      currentRunId.current = null
-      setError(err instanceof Error ? err.message : String(err))
+      currentRunId.current = null;
+      setError(err instanceof Error ? err.message : String(err));
     }
-  }
+  };
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
@@ -912,7 +901,7 @@ function CreatePluginPane({
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 function SidebarFooter({ children }: { children: React.ReactNode }) {
@@ -947,7 +936,7 @@ function SidebarFooter({ children }: { children: React.ReactNode }) {
         {children}
       </div>
     </div>
-  )
+  );
 }
 
 function SearchInput({
@@ -955,21 +944,21 @@ function SearchInput({
   onChange,
   autoFocus,
 }: {
-  value: string
-  onChange: (v: string) => void
-  autoFocus?: boolean
+  value: string;
+  onChange: (v: string) => void;
+  autoFocus?: boolean;
 }) {
-  const inputRef = useRef<HTMLInputElement | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
-    if (!autoFocus) return
+    if (!autoFocus) return;
     const t = requestAnimationFrame(() => {
       try {
-        window.focus()
+        window.focus();
       } catch {}
-      inputRef.current?.focus()
-    })
-    return () => cancelAnimationFrame(t)
-  }, [autoFocus])
+      inputRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(t);
+  }, [autoFocus]);
   return (
     <div className="flex h-7 items-center gap-1.5 rounded-md border border-border/60 bg-card/40 px-2 focus-within:bg-card">
       <SearchIcon />
@@ -977,7 +966,7 @@ function SearchInput({
         ref={inputRef}
         type="text"
         value={value}
-        onChange={e => onChange(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
         placeholder="Search"
         className="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground"
         aria-label="Search"
@@ -993,12 +982,12 @@ function SearchInput({
         </button>
       )}
     </div>
-  )
+  );
 }
 
 function formatCount(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k`
-  return String(n)
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k`;
+  return String(n);
 }
 
 function Spinner() {
@@ -1016,7 +1005,7 @@ function Spinner() {
     >
       <path d="M21 12a9 9 0 1 1-6.219-8.56" />
     </svg>
-  )
+  );
 }
 
 function SearchIcon() {
@@ -1036,7 +1025,7 @@ function SearchIcon() {
       <circle cx="11" cy="11" r="7" />
       <path d="m21 21-4.3-4.3" />
     </svg>
-  )
+  );
 }
 
 function ClearIcon() {
@@ -1055,7 +1044,7 @@ function ClearIcon() {
       <path d="M18 6 6 18" />
       <path d="m6 6 12 12" />
     </svg>
-  )
+  );
 }
 
 function BackIcon() {
@@ -1072,7 +1061,7 @@ function BackIcon() {
     >
       <polyline points="15 18 9 12 15 6" />
     </svg>
-  )
+  );
 }
 
 function PiIcon() {
@@ -1090,7 +1079,7 @@ function PiIcon() {
       />
       <path d="M517.36 400 H634.72 V634.72 H517.36 Z" />
     </svg>
-  )
+  );
 }
 
 function PuzzleIcon() {
@@ -1107,5 +1096,5 @@ function PuzzleIcon() {
     >
       <path d="M19.439 7.85c-.049.322.059.648.289.878l1.568 1.568c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.611 1.611a.98.98 0 0 1-.837.276c-.47-.07-.802-.48-.968-.925a2.501 2.501 0 1 0-3.214 3.214c.446.166.855.497.925.968a.979.979 0 0 1-.276.837l-1.61 1.61a2.404 2.404 0 0 1-1.705.707 2.402 2.402 0 0 1-1.704-.706l-1.568-1.568a1.026 1.026 0 0 0-.877-.29c-.493.074-.84.504-1.02.968a2.5 2.5 0 1 1-3.237-3.237c.464-.18.894-.527.967-1.02a1.026 1.026 0 0 0-.289-.877l-1.568-1.568A2.402 2.402 0 0 1 2 12c0-.617.236-1.234.706-1.704L4.317 8.685a.98.98 0 0 1 .837-.276c.47.07.802.48.968.925a2.501 2.501 0 1 0 3.214-3.214c-.446-.166-.855-.497-.925-.968a.98.98 0 0 1 .276-.837l1.611-1.61a2.404 2.404 0 0 1 1.704-.707c.617 0 1.234.236 1.704.706l1.568 1.568c.23.23.556.338.877.29.493-.074.84-.504 1.02-.968a2.5 2.5 0 1 1 3.237 3.237c-.464.18-.894.527-.967 1.02Z" />
     </svg>
-  )
+  );
 }
