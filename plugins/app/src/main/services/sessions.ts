@@ -13,6 +13,7 @@ import { SummariesService } from "./summaries"
 import { PiExtensionRegistryService } from "./pi-extension-registry"
 import { ReposService } from "./repos"
 import { SessionActivityService } from "./session-activity"
+import { ShellEnvService } from "./shell-env"
 
 import { LiveSession, PROCESS_TOKEN } from "./sessions/live-session"
 import type { ImageRef, QueueKind, Session } from "./sessions/types"
@@ -71,6 +72,7 @@ export class SessionsService extends Service.create({
     repos: ReposService,
     sessionActivity: SessionActivityService,
     auth: AuthService,
+    shellEnv: ShellEnvService,
   },
 }) {
   /** In-memory live sessions, keyed by sessionId. Owned by this
@@ -101,12 +103,6 @@ export class SessionsService extends Service.create({
   }
 
   async evaluate() {
-    // Boot reset: pi processes from a previous run are gone, so
-    // every session's transient fields (streaming flag, pi-side
-    // queue mirror, shadow queue, subscriber count) need to start
-    // empty. The shadow queue is dropped because we have no
-    // pause/resume mechanism to hold items client-side once pi
-    // restarts — the user can re-queue if they still want them.
     await this.ctx.db.client.update(root => {
       for (const s of Object.values(root.app.sessions)) {
         s.isStreaming = false
@@ -115,6 +111,8 @@ export class SessionsService extends Service.create({
         s.subscriberCount = 0
       }
     })
+
+    await this.ctx.shellEnv.getEnv()
 
     await this.refreshAvailableModels()
     await reconcileKilledMarkersOnBoot({ svc: this, processToken: PROCESS_TOKEN })
@@ -127,20 +125,10 @@ export class SessionsService extends Service.create({
     })
   }
 
-  /**
-   * Republish the available-model catalog AND provider auth
-   * statuses. Both writes happen inside a single `update()` so the
-   * renderer never sees a partial state where the model picker
-   * has lit up but the accounts panel still shows "Not connected"
-   * (or vice versa).
-   *
-   * Kept as a passthrough so existing callers (boot, future
-   * activation hooks) don't have to know that the heavy lifting
-   * moved into `AuthService`.
-   */
   async refreshAvailableModels(): Promise<void> {
     await this.ctx.auth.publishStatuses()
   }
+  
 
   // ----- session lifecycle (creation / branching / deletion) -----
 
