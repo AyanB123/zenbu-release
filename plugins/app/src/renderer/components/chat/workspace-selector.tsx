@@ -234,7 +234,10 @@ export function WorkspaceSelector({
           inputRef={inputRef}
           branch={branch}
           onBranchChange={(v) => {
-            setBranch(v);
+            // Branch refs can't contain spaces — turn any run of
+            // whitespace into a single hyphen as the user types, so
+            // hitting space produces a dash inline.
+            setBranch(v.replace(/\s+/g, "-"));
             // Clear the prior error as soon as the user edits.
             if (error) setError(null);
           }}
@@ -249,10 +252,8 @@ export function WorkspaceSelector({
           onCommitMessageChange={setCommitMessage}
         />
         <Footer
-          canSubmit={canSubmit}
           busy={busy}
           commitFirst={commitFirst}
-          onSubmit={() => void handleSubmit()}
           onCancel={onCancel}
         />
       </div>
@@ -408,16 +409,12 @@ function Body({
 }
 
 function Footer({
-  canSubmit,
   busy,
   commitFirst,
-  onSubmit,
   onCancel,
 }: {
-  canSubmit: boolean;
   busy: boolean;
   commitFirst: boolean;
-  onSubmit: () => void;
   onCancel: () => void;
 }) {
   return (
@@ -437,14 +434,6 @@ function Footer({
           ← cancel
         </button>
       )}
-      <button
-        type="button"
-        onClick={onSubmit}
-        disabled={!canSubmit}
-        className="font-medium text-foreground disabled:opacity-50"
-      >
-        create ⏎
-      </button>
     </div>
   );
 }
