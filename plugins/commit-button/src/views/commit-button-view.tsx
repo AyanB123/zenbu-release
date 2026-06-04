@@ -1,15 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { useRpc } from "@zenbujs/core/react"
-import {
-  GitCommitVerticalIcon,
-  GitPullRequestIcon,
-} from "lucide-react"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@zenbu/ui/popover"
-import { useOpenPrView } from "@/views/pull-requests/lib/use-open-pr-view"
+import { useRpc, type ViewComponentProps } from "@zenbujs/core/react"
+import { GitCommitVerticalIcon, GitPullRequestIcon } from "lucide-react"
+import { Popover, PopoverContent, PopoverTrigger } from "@zenbu/ui/popover"
 import { CommitPopoverBody } from "./commit-popover-body"
 
 const POLL_MS = 3000
@@ -34,9 +26,14 @@ export type Summary = {
   lastCommit: LastCommit
 }
 
-export type CommitButtonProps = {
+/** Title-bar args every `kind: "title-bar"` view receives. */
+type TitleBarViewArgs = {
+  workspaceId: string | null
+  scopeId: string | null
   directory: string | null
 }
+
+type PopoverView = "menu" | "commit"
 
 /**
  * Title-bar button that shows the working-tree diff size as `+a -d`
@@ -45,16 +42,32 @@ export type CommitButtonProps = {
  * Polls the main process every few seconds while idle — git status
  * is cheap. While the popover is open we also let the popover drive
  * refresh after mutating actions (commit/pull/push/fetch).
+ *
+ * Plugin-contributed title-bar view: `directory` arrives in `args`
+ * (resolved by the host from the active scope) rather than as a
+ * direct prop the way it did when this lived in `plugins/app`.
  */
-type PopoverView = "menu" | "commit"
-
-export function CommitButton({ directory }: CommitButtonProps) {
+export default function CommitButtonView({
+  args,
+}: ViewComponentProps<TitleBarViewArgs>) {
+  const directory = args?.directory ?? null
   const rpc = useRpc()
-  const openPrView = useOpenPrView(directory)
   const [summary, setSummary] = useState<Summary | null>(null)
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<PopoverView>("menu")
   const inFlight = useRef(false)
+
+  // Open the host's pull-requests pane view. Inlined here (was the
+  // `useOpenPrView` hook in `plugins/app`) because we can't import
+  // from the host's `@/` and it's just a single RPC call.
+  const openPr = useCallback(() => {
+    void rpc.app.github.openPullRequestsView({
+      mode: "create",
+      prNumber: null,
+      directory,
+      openMode: "split-right",
+    })
+  }, [rpc, directory])
 
   // Reset back to the menu whenever the popover closes so the next
   // click on the button starts from the action picker again,
@@ -161,7 +174,7 @@ export function CommitButton({ directory }: CommitButtonProps) {
             onCommit={() => setView("commit")}
             onPr={() => {
               setOpen(false)
-              openPrView({ mode: "create", openMode: "split-right" })
+              openPr()
             }}
           />
         ) : (

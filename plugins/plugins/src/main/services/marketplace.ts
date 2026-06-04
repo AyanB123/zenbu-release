@@ -156,7 +156,7 @@ export class MarketplaceService extends Service.create({
       viewType: DETAIL_NAME,
       source: "marketplace",
       args: { pluginId: args.pluginId },
-      placement: "left",
+      placement: "tab",
     })
     return { ok: true }
   }

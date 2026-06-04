@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { useRpc } from "@zenbujs/core/react"
 import { GitBranchIcon } from "lucide-react"
-import type { Summary } from "./commit-button"
+import type { Summary } from "./commit-button-view"
 
 type PreviewFile = {
   path: string

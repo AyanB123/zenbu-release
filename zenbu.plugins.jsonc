@@ -11,6 +11,7 @@
 		{ "path": "./plugins/plugins/zenbu.plugin.ts", "enabled": true },
 		{ "path": "./plugins/open-in/zenbu.plugin.ts", "enabled": true },
 		{ "path": "./plugins/auto-updater/zenbu.plugin.ts", "enabled": true },
+		{ "path": "./plugins/commit-button/zenbu.plugin.ts", "enabled": false },
 		{ "path": "./plugins/settings/zenbu.plugin.ts", "enabled": true },
 		{ "path": "./plugins/pi-footer/zenbu.plugin.ts", "enabled": true },
 		{ "path": "./plugins/cm-markdown/zenbu.plugin.ts", "enabled": true },

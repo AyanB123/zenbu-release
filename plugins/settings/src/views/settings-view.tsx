@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   useDb,
   useDbClient,
@@ -71,20 +71,30 @@ export default function SettingsView({
     (root) => root.settings.ui.lastTab,
   ) as SettingsTab;
 
-  const requestedTab =
-    args?.tab && VALID_TABS.has(args.tab) ? args.tab : null;
-  const tab: SettingsTab = requestedTab ?? persistedTab;
+  // Always render from the persisted tab. A deep-link's `args.tab`
+  // only seeds the *initial* selection (see the effect below) — it
+  // must not pin the controlled value, otherwise clicking another
+  // tab would write to the db but the render would keep snapping
+  // back to the deep-linked tab, leaving the tabs feeling locked.
+  const tab: SettingsTab = persistedTab;
 
-  // Persist tab changes back into the settings plugin's own schema.
-  // Don't write on every render — only when the resolved tab
-  // actually changes — so the replica doesn't see a no-op update
-  // on every keystroke in a child input.
+  // Honor a deep-link's `{ tab }` arg by writing it into the
+  // persisted last-selected tab — once per distinct arg value.
+  // Tracking the last-applied arg in a ref means a re-render with
+  // the same arg won't re-lock the tab after the user has clicked
+  // elsewhere; only a genuinely new deep-link re-seeds it.
+  const appliedTabArg = useRef<SettingsTab | null>(null);
   useEffect(() => {
-    if (tab === persistedTab) return;
+    const requestedTab =
+      args?.tab && VALID_TABS.has(args.tab) ? args.tab : null;
+    if (!requestedTab) return;
+    if (appliedTabArg.current === requestedTab) return;
+    appliedTabArg.current = requestedTab;
+    if (requestedTab === persistedTab) return;
     void dbClient.update((root) => {
-      root.settings.ui.lastTab = tab;
+      root.settings.ui.lastTab = requestedTab;
     });
-  }, [tab, persistedTab, dbClient]);
+  }, [args?.tab, persistedTab, dbClient]);
 
   // Honor a deep-link's `{ sectionId }` arg by pushing it into
   // the persisted last-selected section. The Plugins panel reads

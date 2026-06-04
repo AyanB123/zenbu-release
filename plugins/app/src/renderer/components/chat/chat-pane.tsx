@@ -1103,7 +1103,6 @@ export function ChatPane({
               <WorktreeHandoffSelector
                 chatId={chat.id}
                 sourceScopeId={chat.scopeId}
-                windowId={windowId}
                 onCancel={() => setTreePanel({ kind: "closed" })}
                 onClose={() => setTreePanel({ kind: "closed" })}
                 onConflictHandedToComposer={() =>
