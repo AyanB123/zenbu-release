@@ -1,6 +1,6 @@
 {
   "name": "@zenbu/commit-button",
-  "description": "Title-bar commit button with working-tree diff badge",
+  "description": "Commit changes and open pull requests",
   "version": "0.1.0",
   "private": true,
   "type": "module",

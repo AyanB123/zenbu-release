@@ -1,6 +1,6 @@
 {
   "name": "@zenbu/pi-footer",
-  "description": "Bring PI's TUI controls into the footer",
+  "description": "A Pi like footer inside Zenbu",
   "version": "0.1.0",
   "private": true,
   "type": "module",

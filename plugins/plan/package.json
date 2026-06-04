@@ -1,6 +1,6 @@
 {
   "name": "@zenbu/plan",
-  "description": "Break work into steps the agent follows",
+  "description": "Gives your agent an interactive plan tool",
   "version": "0.1.0",
   "private": true,
   "type": "module",

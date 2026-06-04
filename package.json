@@ -18,7 +18,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@zenbujs/core": "0.4.3"
+    "@zenbujs/core": "0.4.4"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

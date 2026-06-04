@@ -1,6 +1,6 @@
 {
   "name": "@zenbu/terminal",
-  "description": "Run shell commands without leaving the app",
+  "description": "Embed a terminal in your bottom panel",
   "version": "0.1.0",
   "private": true,
   "type": "module",
