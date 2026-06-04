@@ -22,21 +22,25 @@ const MAIN_WINDOW_ID = "main"
  * (see its `STEM_SCORES`). */
 const PLAYGROUND_ICON_NAME = "icon.png"
 
-/** Marker files that identify the Zenbu source checkout root.
- * Same pair the house-rules extension keys off. */
-const ROOT_MARKERS = ["zenbu.config.ts", "AGENTS.md"] as const
 /** App icon location relative to the Zenbu source root. Ships in
  * production builds via the per-plugin `assets` include glob. */
 const APP_ICON_RELATIVE = path.join("plugins", "app", "assets", "icon.png")
 
-function hasZenbuMarkers(dir: string): boolean {
-  return ROOT_MARKERS.every(marker => fs.existsSync(path.join(dir, marker)))
-}
-
-function walkUpForRoot(start: string): string | null {
+/**
+ * Walk up from `start` looking for the directory that actually
+ * contains the app icon at `plugins/app/assets/icon.png`.
+ *
+ * This is self-validating: instead of trusting a marker file that
+ * may or may not ship (the root `AGENTS.md` is *not* in production
+ * builds, which is why the playground icon silently failed there),
+ * we look for the icon itself. Returns the absolute icon path, or
+ * `null` if nothing matched on the way up.
+ */
+function walkUpForIcon(start: string): string | null {
   let current = path.resolve(start)
   for (;;) {
-    if (hasZenbuMarkers(current)) return current
+    const candidate = path.join(current, APP_ICON_RELATIVE)
+    if (fs.existsSync(candidate)) return candidate
     const parent = path.dirname(current)
     if (parent === current) return null
     current = parent
@@ -49,8 +53,10 @@ function walkUpForRoot(start: string): string | null {
  * the icon is reachable from the running main-process module:
  *
  *   1. `ZENBU_SOURCE_DIR` env override.
- *   2. Walk up from this compiled module's directory for the
- *      source-root markers, then join the known icon sub-path.
+ *   2. Walk up from this compiled module's directory looking for
+ *      the icon itself at the known sub-path. Self-validating, so
+ *      it doesn't depend on a marker file that may not ship in
+ *      production (the root `AGENTS.md` is excluded from builds).
  *
  * Returns `null` if nothing resolves (we then just leave the
  * playground on its letter tile).
@@ -63,11 +69,8 @@ function resolveAppIconPath(): string | null {
   }
   try {
     const here = path.dirname(fileURLToPath(import.meta.url))
-    const root = walkUpForRoot(here)
-    if (root) {
-      const candidate = path.join(root, APP_ICON_RELATIVE)
-      if (fs.existsSync(candidate)) return candidate
-    }
+    const icon = walkUpForIcon(here)
+    if (icon) return icon
   } catch {
     // import.meta.url not a file URL (unusual bundling) — give up.
   }
