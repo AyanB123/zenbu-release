@@ -804,8 +804,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/ui
       '@zenbujs/core':
-        specifier: ^0.2.0
-        version: 0.2.3(@types/node@22.19.19)(electron@42.3.0)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
+        specifier: ^0.4.0
+        version: 0.4.3(@types/node@22.19.19)(electron@42.3.0)(jiti@2.7.0)(lightningcss@1.32.0)(react@19.2.6)(sass@1.51.0)(yaml@2.9.0)(zod@4.4.3)
       lucide-react:
         specifier: ^1.16.0
         version: 1.16.0(react@19.2.6)
