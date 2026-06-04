@@ -1,5 +1,5 @@
 import { useMemo, useRef } from "react"
-import { ArchiveRestoreIcon, Trash2Icon } from "lucide-react"
+import { ArchiveIcon, ArchiveRestoreIcon } from "lucide-react"
 import { useDb, useDbClient } from "@zenbujs/core/react"
 import {
   DropdownMenu,
@@ -167,7 +167,7 @@ export function WorktreeShelfMenu() {
             className="hg-icon size-[22px] rounded bg-transparent text-muted-foreground hover:bg-transparent"
             aria-label="Archived"
           >
-            <Trash2Icon size={13} />
+            <ArchiveIcon size={13} />
           </Button>
         </DropdownMenuTrigger>
       </HoverTip>

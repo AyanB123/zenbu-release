@@ -111,7 +111,12 @@ export default function SettingsView({
     // the host owns the top line. Drawing one inside the component
     // would just stack a second pixel on top.
     <div className="flex h-full w-full flex-col bg-background text-foreground">
-      <div className="mx-auto flex h-full w-full max-w-[1000px] flex-col px-6 py-6">
+      {/* `@container` makes this wrapper the query container so the
+          settings layout responds to the *pane* width (it can be a
+          full window or a narrow split), not the viewport. The
+          Plugins tab + General rows below use `@max-[...]:` variants
+          against it. */}
+      <div className="@container mx-auto flex h-full w-full max-w-[1000px] flex-col px-6 py-6">
         <h1 className="text-[18px] font-semibold">Settings</h1>
         <Tabs
           value={tab}
@@ -176,7 +181,7 @@ function ThemeRow() {
   );
 
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex items-center justify-between @max-[480px]:flex-wrap @max-[480px]:items-start">
       <span className="text-[12px] font-medium text-foreground">Theme</span>
       <ToggleGroup
         type="single"

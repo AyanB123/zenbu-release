@@ -1,5 +1,6 @@
 {
   "name": "@zenbu/terminal",
+  "description": "Run shell commands without leaving the app",
   "version": "0.1.0",
   "private": true,
   "type": "module",

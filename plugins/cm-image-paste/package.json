@@ -1,5 +1,6 @@
 {
   "name": "@zenbu/cm-image-paste",
+  "description": "Drop screenshots straight into the composer",
   "version": "0.1.0",
   "private": true,
   "type": "module",

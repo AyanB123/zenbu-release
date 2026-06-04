@@ -8,7 +8,7 @@
 		{ "path": "./plugins/file-tree-sidebar/zenbu.plugin.ts", "enabled": false },
 		{ "path": "./plugins/git-tree-sidebar/zenbu.plugin.ts", "enabled": false },
 		{ "path": "./plugins/terminal/zenbu.plugin.ts", "enabled": true },
-		{ "path": "./plugins/marketplace/zenbu.plugin.ts", "enabled": true },
+		{ "path": "./plugins/plugins/zenbu.plugin.ts", "enabled": true },
 		{ "path": "./plugins/open-in/zenbu.plugin.ts", "enabled": true },
 		{ "path": "./plugins/auto-updater/zenbu.plugin.ts", "enabled": true },
 		{ "path": "./plugins/settings/zenbu.plugin.ts", "enabled": true },
