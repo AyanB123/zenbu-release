@@ -10,10 +10,17 @@ import {
 
 export const VIEW_SOURCE_KEY = "__source"
 
+/** Stable `source` tag for the settings view, so repeated
+ * `openSettings` gestures navigate the existing settings tab
+ * instead of stacking up duplicates. */
+export const SETTINGS_VIEW_SOURCE = "settings"
+
 /**
  * Settings-as-an-action entry point. Two routes:
- *  - On a workspace view: append a regular tab in the active pane,
- *    same gesture as any other "open view in new tab" action.
+ *  - On a workspace view: reuse the existing settings tab if one is
+ *    already open anywhere in the active scope's panes (navigating
+ *    it in place and bringing it into view); otherwise open a new
+ *    tab in the active pane.
  *  - On anything else (onboarding, or the global settings view is
  *    already up): replace `activeView` with the workspace-less
  *    `{ kind: "view", viewType: "settings" }`, which the sidebar
@@ -44,7 +51,14 @@ export function openSettingsInRoot(
     ws.activeView = { kind: "view", viewType: "settings", args }
     return
   }
-  openViewInRoot(root, windowId, "settings", "new-tab", args)
+  openViewBySourceInRoot(
+    root,
+    windowId,
+    "settings",
+    SETTINGS_VIEW_SOURCE,
+    args,
+    "tab",
+  )
 }
 
 /** Open a registered view in the active scope's panes. Returns
