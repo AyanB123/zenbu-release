@@ -83,4 +83,5 @@
 ## Conventions
 - LF→CRLF warnings from git on Windows are normal; don't "fix" them.
 - When touching `@zenbujs/core`, always update `patches/@zenbujs__core@0.4.4.patch` and run `pnpm install --offline` to verify.
+- `.github/workflows/version-drift-check.yml` runs weekly (Mon 06:00 UTC) + manual. It baseline-typechecks, then bumps `@zenbujs/core@latest` to check the patch still applies; on failure it files/updates the "Version drift detected" issue (labels: tech-debt, P1). See issue #6.
 - Targeted perf scan after main-service edits: `rg -n "spawnSync|readFileSync|catch \{\}|new Promise\(" plugins/app/src/main/services`.

@@ -1,0 +1,77 @@
+# Version drift check
+#
+# Scheduled CI job that detects upstream drift for dependencies that are pinned
+# and patched in this repo:
+#   - @zenbujs/core@0.4.4  (patch: patches/@zenbujs__core@0.4.4.patch)
+#
+# It runs the baseline typecheck, then attempts to bump @zenbujs/core to latest
+# and re-apply the patch. If either check fails, it opens/updates a tracking
+# issue so we know to refresh the patch before upgrading.
+#
+# See: https://github.com/zenbu-labs/zenbu-release/issues/6
+name: Version drift check
+
+on:
+  schedule:
+    # Monday 06:00 UTC
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install (baseline)
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck (baseline)
+        id: typecheck
+        continue-on-error: true
+        run: node node_modules/typescript/bin/tsc --noEmit
+
+      - name: Probe @zenbujs/core drift
+        id: core
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          pnpm up @zenbujs/core@latest
+          pnpm install --no-frozen-lockfile
+
+      - name: Report
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: ${{ steps.typecheck.outcome == 'failure' || steps.core.outcome == 'failure' }}
+        run: |
+          set -euo pipefail
+          TITLE="Version drift detected"
+          RUN="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          {
+            printf 'Automated version-drift check failed.\n\nSource: %s\n\n' "$RUN"
+            printf -- '- typecheck (baseline): %s\n' '${{ steps.typecheck.outcome }}'
+            printf -- '- @zenbujs/core upgrade + patch: %s\n\n' '${{ steps.core.outcome }}'
+            printf 'Investigate before bumping @zenbujs/core past 0.4.4.\n'
+          } > /tmp/body.md
+          ISSUE_URL=$(gh issue list --state open --search "in:title ${TITLE}" --json url --jq '.[0].url' || true)
+          if [ -n "$ISSUE_URL" ]; then
+            gh issue edit "$ISSUE_URL" --body-file /tmp/body.md
+          else
+            gh issue create --title "$TITLE" --body-file /tmp/body.md --label tech-debt --label P1
+          fi
+          exit 1
