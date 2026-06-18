@@ -556,7 +556,9 @@ export class ShortcutsService_App extends Service.create({
         for (const u of unsubs) {
           try {
             u()
-          } catch {}
+          } catch (err) {
+            console.warn("[shortcuts] action disposer failed:", err)
+          }
         }
       }
     })

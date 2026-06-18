@@ -1,0 +1,20 @@
+diff --git a/dist/runtime/safe-subscribe.js b/dist/runtime/safe-subscribe.js
+index 9253218..acd64db 100644
+--- a/dist/runtime/safe-subscribe.js
++++ b/dist/runtime/safe-subscribe.js
+@@ -1,7 +1,7 @@
+ import { subscribe } from "@parcel/watcher";
+ import { registerWatcherClosable } from "./pause.js";
+ export function safeSubscribe(directory, onEvents) {
+-    const subscriptionPromise = subscribe(directory, onEvents).catch((err) => {
++    const subscriptionPromise = subscribe(directory, onEvents, process.platform === "win32" ? { backend: "windows" } : undefined).catch((err) => {
+         console.error(`[zenbu safeSubscribe] subscribe failed for ${directory}:`, err);
+         return null;
+     });
+@@ -26,4 +26,4 @@ export function safeSubscribe(directory, onEvents) {
+         },
+     };
+ }
+-//# sourceMappingURL=safe-subscribe.js.map
+\ No newline at end of file
++//# sourceMappingURL=safe-subscribe.js.map

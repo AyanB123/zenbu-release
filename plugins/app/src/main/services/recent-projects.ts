@@ -1,5 +1,6 @@
 import crypto from "node:crypto"
-import fs from "node:fs"
+import fsp from "node:fs/promises"
+import type { Stats } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
@@ -12,6 +13,7 @@ type RecentProject = Schema["recentProjects"][string]
 type Source = RecentProject["sources"][number]
 
 const execFileP = promisify(execFile)
+const SQLITE_TIMEOUT_MS = 1500
 
 /**
  * VS Code-derived IDEs we know how to scrape. Each entry is the
@@ -86,7 +88,7 @@ async function collectAcrossIdes(): Promise<RecentProject[]> {
   >()
   for (const { source, appName } of IDE_APPS) {
     const appDir = path.join(supportDir, appName)
-    if (!fs.existsSync(appDir)) continue
+    if (!(await pathExists(appDir))) continue
     try {
       const entries = await collectFromIde(appDir)
       for (const { path: folderPath, lastOpenedAt } of entries) {
@@ -128,12 +130,14 @@ async function collectFromIde(
 ): Promise<Array<{ path: string; lastOpenedAt: number }>> {
   const userDir = path.join(appDir, "User")
   const dbPath = path.join(userDir, "globalStorage", "state.vscdb")
-  if (!fs.existsSync(dbPath)) return []
+  if (!(await pathExists(dbPath))) return []
 
   const orderedPaths = await readRecentList(dbPath)
   if (orderedPaths.length === 0) return []
 
-  const mtimes = readWorkspaceMtimes(path.join(userDir, "workspaceStorage"))
+  const mtimes = await readWorkspaceMtimes(
+    path.join(userDir, "workspaceStorage"),
+  )
 
   // Fall back to a synthetic timestamp derived from the entry's
   // position in the recent list when we don't have a real mtime,
@@ -145,8 +149,7 @@ async function collectFromIde(
   const out: Array<{ path: string; lastOpenedAt: number }> = []
   for (let i = 0; i < orderedPaths.length; i++) {
     const folderPath = orderedPaths[i]!
-    if (!fs.existsSync(folderPath)) continue
-    const stat = safeStat(folderPath)
+    const stat = await safeStat(folderPath)
     // Skip files masquerading as folders (shouldn't happen since
     // we filter by `folderUri`, but defensive).
     if (!stat?.isDirectory()) continue
@@ -176,7 +179,7 @@ async function readRecentList(dbPath: string): Promise<string[]> {
       "-readonly",
       dbPath,
       "SELECT value FROM ItemTable WHERE key='history.recentlyOpenedPathsList';",
-    ])
+    ], { timeout: SQLITE_TIMEOUT_MS, maxBuffer: 2 * 1024 * 1024 })
     raw = stdout.trim()
   } catch (err) {
     console.warn(
@@ -215,34 +218,47 @@ async function readRecentList(dbPath: string): Promise<string[]> {
  * Multi-root workspaces (the `workspace` field instead of `folder`)
  * are skipped — they don't correspond to a single openable folder
  * and we can't represent them as a one-click action anyway. */
-function readWorkspaceMtimes(workspaceStorageDir: string): Map<string, number> {
+async function readWorkspaceMtimes(
+  workspaceStorageDir: string,
+): Promise<Map<string, number>> {
   const out = new Map<string, number>()
-  if (!fs.existsSync(workspaceStorageDir)) return out
-  let dirents: fs.Dirent[]
+  if (!(await pathExists(workspaceStorageDir))) return out
+  let dirents: import("node:fs").Dirent[]
   try {
-    dirents = fs.readdirSync(workspaceStorageDir, { withFileTypes: true })
-  } catch {
+    dirents = await fsp.readdir(workspaceStorageDir, { withFileTypes: true })
+  } catch (err) {
+    console.warn(
+      "[recent-projects] failed to read workspaceStorage:",
+      err instanceof Error ? err.message : err,
+    )
     return out
   }
-  for (const d of dirents) {
-    if (!d.isDirectory()) continue
+  const results = await Promise.all(
+    dirents.filter(d => d.isDirectory()).map(async d => {
     const subDir = path.join(workspaceStorageDir, d.name)
     const jsonPath = path.join(subDir, "workspace.json")
-    if (!fs.existsSync(jsonPath)) continue
     let parsed: { folder?: unknown }
     try {
-      parsed = JSON.parse(fs.readFileSync(jsonPath, "utf-8"))
+      const [raw, stat] = await Promise.all([
+        fsp.readFile(jsonPath, "utf-8"),
+        fsp.stat(subDir),
+      ])
+      parsed = JSON.parse(raw)
+      return { parsed, mtimeMs: stat.mtimeMs }
     } catch {
-      continue
+      return null
     }
+    }),
+  )
+  for (const result of results) {
+    if (!result) continue
+    const { parsed, mtimeMs } = result
     const folder = parsed.folder
     if (typeof folder !== "string") continue
     const local = fileUriToPath(folder)
     if (!local) continue
-    const mt = safeStat(subDir)?.mtimeMs
-    if (mt == null) continue
     const prev = out.get(local)
-    if (prev == null || mt > prev) out.set(local, mt)
+    if (prev == null || mtimeMs > prev) out.set(local, mtimeMs)
   }
   return out
 }
@@ -266,10 +282,26 @@ function fileUriToPath(uri: string): string | null {
   }
 }
 
-function safeStat(p: string): fs.Stats | null {
+async function pathExists(p: string): Promise<boolean> {
   try {
-    return fs.statSync(p)
+    await fsp.access(p)
+    return true
   } catch {
+    return false
+  }
+}
+
+async function safeStat(p: string): Promise<Stats | null> {
+  try {
+    return await fsp.stat(p)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") {
+      console.warn(
+        "[recent-projects] stat failed:",
+        p,
+        err instanceof Error ? err.message : err,
+      )
+    }
     return null
   }
 }

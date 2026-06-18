@@ -1,7 +1,7 @@
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { spawn, spawnSync } from "node:child_process"
+import { spawn } from "node:child_process"
 import dotenv from "dotenv"
 
 import { Service } from "@zenbujs/core/runtime"
@@ -18,11 +18,6 @@ import { ShellEnvService } from "./shell-env"
 import { LiveSession, PROCESS_TOKEN } from "./sessions/live-session"
 import type { ImageRef, QueueKind, Session } from "./sessions/types"
 import {
-  activate,
-  resolveSessionLabelSnapshot,
-  syncRuntime,
-} from "./sessions/activation"
-import {
   peekEventLogTail,
   rebuildEventLogFromCurrentPath,
 } from "./sessions/event-log"
@@ -35,24 +30,12 @@ import {
   reconcileKilledMarkersOnBoot,
   snapshotKilledMarkersOnDispose,
 } from "./sessions/killed-markers"
-import {
-  clone,
-  createChatSession,
-  deleteSession,
-  fork,
-  forkAtUserMessage,
-} from "./sessions/branching"
-import {
-  moveChatToExistingScope,
-  moveToNewWorktree,
-} from "./sessions/scope-moves"
-import {
-  deleteQueued,
-  editQueued,
-  enqueue,
-  prompt,
-  sendQueuedNow,
-} from "./sessions/queue"
+
+const GH_AUTH_TIMEOUT_MS = 5000
+const GH_GIST_TIMEOUT_MS = 30000
+const MAX_LIVE_SESSIONS = 50
+const LIVE_SESSION_IDLE_MS = 30 * 60 * 1000
+const LIVE_SESSION_SWEEP_MS = 60 * 1000
 
 dotenv.config({
   path: path.resolve(
@@ -61,6 +44,37 @@ dotenv.config({
   ),
   quiet: true,
 })
+
+let activationModulePromise:
+  | Promise<typeof import("./sessions/activation")>
+  | null = null
+let branchingModulePromise:
+  | Promise<typeof import("./sessions/branching")>
+  | null = null
+let scopeMovesModulePromise:
+  | Promise<typeof import("./sessions/scope-moves")>
+  | null = null
+let queueModulePromise: Promise<typeof import("./sessions/queue")> | null = null
+
+function loadActivationModule() {
+  activationModulePromise ??= import("./sessions/activation")
+  return activationModulePromise
+}
+
+function loadBranchingModule() {
+  branchingModulePromise ??= import("./sessions/branching")
+  return branchingModulePromise
+}
+
+function loadScopeMovesModule() {
+  scopeMovesModulePromise ??= import("./sessions/scope-moves")
+  return scopeMovesModulePromise
+}
+
+function loadQueueModule() {
+  queueModulePromise ??= import("./sessions/queue")
+  return queueModulePromise
+}
 
 export class SessionsService extends Service.create({
   key: "sessions",
@@ -86,6 +100,7 @@ export class SessionsService extends Service.create({
   /** Per-session queue mutex tickets — see `withQueueLock` in
    * `./sessions/queue.ts`. */
   readonly queueLocks = new Map<string, Promise<void>>()
+  private liveSessionSweepTimer: ReturnType<typeof setInterval> | null = null
 
   /**
    * Pi's credential store. Owned by `AuthService` — we just read
@@ -114,14 +129,37 @@ export class SessionsService extends Service.create({
 
     await this.ctx.shellEnv.getEnv()
 
-    await this.refreshAvailableModels()
+    const refreshModelsTimer = setTimeout(() => {
+      const runtimeState = globalThis as { __zenbu_shutting_down__?: boolean }
+      if (runtimeState.__zenbu_shutting_down__) return
+      void this.refreshAvailableModels().catch(err => {
+        console.warn(
+          "[sessions] background model refresh failed:",
+          err instanceof Error ? err.message : err,
+        )
+      })
+    }, 30_000)
+    refreshModelsTimer.unref?.()
     await reconcileKilledMarkersOnBoot({ svc: this, processToken: PROCESS_TOKEN })
 
+    this.liveSessionSweepTimer = setInterval(() => {
+      void this.pruneLiveSessions("idle-sweep")
+    }, LIVE_SESSION_SWEEP_MS)
+    this.liveSessionSweepTimer.unref?.()
+
     this.setup("dispose-live", () => async () => {
+      clearTimeout(refreshModelsTimer)
+      if (this.liveSessionSweepTimer) {
+        clearInterval(this.liveSessionSweepTimer)
+        this.liveSessionSweepTimer = null
+      }
       await snapshotKilledMarkersOnDispose({
         svc: this,
         processToken: PROCESS_TOKEN,
       })
+      for (const sessionId of [...this.live.keys()]) {
+        this.disposeLiveSession(sessionId, "service-dispose")
+      }
     })
   }
 
@@ -139,6 +177,7 @@ export class SessionsService extends Service.create({
     parentEntryId?: string
     title?: string
   }): Promise<{ sessionId: string }> {
+    const { createChatSession } = await loadBranchingModule()
     return createChatSession({ svc: this, ...args })
   }
 
@@ -148,6 +187,7 @@ export class SessionsService extends Service.create({
     workspaceId: string
     title?: string
   }): Promise<{ sessionId: string; chatId: string; scopeId: string }> {
+    const { fork } = await loadBranchingModule()
     return fork({ svc: this, ...args })
   }
 
@@ -155,6 +195,7 @@ export class SessionsService extends Service.create({
     sessionId: string
     title?: string
   }): Promise<{ sessionId: string; chatId: string; scopeId: string }> {
+    const { clone } = await loadBranchingModule()
     return clone({ svc: this, ...args })
   }
 
@@ -168,10 +209,12 @@ export class SessionsService extends Service.create({
     scopeId: string
     editorText: string
   }> {
+    const { forkAtUserMessage } = await loadBranchingModule()
     return forkAtUserMessage({ svc: this, ...args })
   }
 
   async deleteSession(args: { sessionId: string }): Promise<void> {
+    const { deleteSession } = await loadBranchingModule()
     return deleteSession({ svc: this, ...args })
   }
 
@@ -184,6 +227,7 @@ export class SessionsService extends Service.create({
     windowId: string
     commitFirst?: { message: string }
   }): Promise<{ scopeId: string; directory: string }> {
+    const { moveToNewWorktree } = await loadScopeMovesModule()
     return moveToNewWorktree({ svc: this, ...args })
   }
 
@@ -193,6 +237,7 @@ export class SessionsService extends Service.create({
     windowId: string
     bumpCreatedAt: boolean
   }): Promise<{ ok: true } | { ok: false; error: string }> {
+    const { moveChatToExistingScope } = await loadScopeMovesModule()
     return moveChatToExistingScope({ svc: this, ...args })
   }
 
@@ -231,6 +276,7 @@ export class SessionsService extends Service.create({
     editorState?: unknown
     streamingBehavior?: "steer" | "followUp"
   }): Promise<void> {
+    const { prompt } = await loadQueueModule()
     return prompt({ svc: this, ...args })
   }
 
@@ -255,7 +301,7 @@ export class SessionsService extends Service.create({
     const live = this.live.get(args.sessionId)
     if (!live) return
     await live.pi.abort()
-    await syncRuntime({ svc: this, live })
+    await this.syncLiveRuntime(live)
   }
 
   async enqueue(args: {
@@ -267,6 +313,7 @@ export class SessionsService extends Service.create({
     imageRefs?: ImageRef[]
     editorState?: unknown
   }): Promise<void> {
+    const { enqueue } = await loadQueueModule()
     return enqueue({ svc: this, ...args })
   }
 
@@ -279,14 +326,17 @@ export class SessionsService extends Service.create({
     editorState?: unknown
     kind?: QueueKind
   }): Promise<void> {
+    const { editQueued } = await loadQueueModule()
     return editQueued({ svc: this, ...args })
   }
 
   async deleteQueued(args: { sessionId: string; id: string }): Promise<void> {
+    const { deleteQueued } = await loadQueueModule()
     return deleteQueued({ svc: this, ...args })
   }
 
   async sendQueuedNow(args: { sessionId: string; id: string }): Promise<void> {
+    const { sendQueuedNow } = await loadQueueModule()
     return sendQueuedNow({ svc: this, ...args })
   }
 
@@ -321,13 +371,13 @@ export class SessionsService extends Service.create({
       throw new Error(`unknown model ${args.provider}/${args.id}`)
     }
     await live.pi.setModel(model)
-    await syncRuntime({ svc: this, live })
+    await this.syncLiveRuntime(live)
   }
 
   async cycleModel(args: { sessionId: string }) {
     const live = await this.ensureLive(args.sessionId)
     const result = await live.pi.cycleModel()
-    await syncRuntime({ svc: this, live })
+    await this.syncLiveRuntime(live)
     return result
   }
 
@@ -337,13 +387,13 @@ export class SessionsService extends Service.create({
   }) {
     const live = await this.ensureLive(args.sessionId)
     live.pi.setThinkingLevel(args.level)
-    await syncRuntime({ svc: this, live })
+    await this.syncLiveRuntime(live)
   }
 
   async cycleThinkingLevel(args: { sessionId: string }) {
     const live = await this.ensureLive(args.sessionId)
     const next = live.pi.cycleThinkingLevel()
-    await syncRuntime({ svc: this, live })
+    await this.syncLiveRuntime(live)
     return next
   }
 
@@ -360,7 +410,7 @@ export class SessionsService extends Service.create({
   }) {
     const live = await this.ensureLive(args.sessionId)
     live.pi.setAutoCompactionEnabled(args.enabled)
-    await syncRuntime({ svc: this, live })
+    await this.syncLiveRuntime(live)
   }
 
   async compact(args: { sessionId: string; instructions?: string }) {
@@ -371,7 +421,7 @@ export class SessionsService extends Service.create({
   async reload(args: { sessionId: string }): Promise<{ ok: true }> {
     const live = await this.ensureLive(args.sessionId)
     await live.pi.reload()
-    await syncRuntime({ svc: this, live })
+    await this.syncLiveRuntime(live)
     return { ok: true }
   }
 
@@ -397,32 +447,27 @@ export class SessionsService extends Service.create({
     gistUrl: string
     viewerUrl: string
   }> {
-    const auth = spawnSync("gh", ["auth", "status"], { encoding: "utf8" })
+    const auth = await spawnBufferedWithTimeout(
+      "gh",
+      ["auth", "status"],
+      GH_AUTH_TIMEOUT_MS,
+    )
     if (auth.status !== 0) {
-      throw new Error("GitHub CLI is not logged in. Run `gh auth login` first.")
+      throw new Error(
+        auth.stderr.trim() ||
+          "GitHub CLI is not logged in. Run `gh auth login` first.",
+      )
     }
 
     const live = await this.ensureLive(args.sessionId)
     const tmpFile = path.join(os.tmpdir(), `pi-session-${args.sessionId}.html`)
     await live.pi.exportToHtml(tmpFile)
 
-    const result = await new Promise<{
-      stdout: string
-      stderr: string
-      code: number | null
-    }>((resolve, reject) => {
-      const proc = spawn("gh", ["gist", "create", "--public=false", tmpFile])
-      let stdout = ""
-      let stderr = ""
-      proc.stdout?.on("data", chunk => {
-        stdout += String(chunk)
-      })
-      proc.stderr?.on("data", chunk => {
-        stderr += String(chunk)
-      })
-      proc.on("error", reject)
-      proc.on("close", code => resolve({ stdout, stderr, code }))
-    })
+    const result = await spawnBufferedWithTimeout(
+      "gh",
+      ["gist", "create", "--public=false", tmpFile],
+      GH_GIST_TIMEOUT_MS,
+    )
     if (result.code !== 0) {
       throw new Error(result.stderr.trim() || "Failed to create gist")
     }
@@ -446,7 +491,7 @@ export class SessionsService extends Service.create({
   }): Promise<{ ok: true }> {
     const live = await this.ensureLive(args.sessionId)
     live.pi.setSessionName(args.name)
-    await syncRuntime({ svc: this, live })
+    await this.syncLiveRuntime(live)
     return { ok: true }
   }
 
@@ -507,7 +552,7 @@ export class SessionsService extends Service.create({
       getLive: (id: string) => this.live.get(id),
     }
     await rebuildEventLogFromCurrentPath({ ctx, live })
-    await syncRuntime({ svc: this, live })
+    await this.syncLiveRuntime(live)
     return {
       cancelled: result.cancelled,
       aborted: result.aborted ?? false,
@@ -555,7 +600,7 @@ export class SessionsService extends Service.create({
       getLive: (id: string) => this.live.get(id),
     }
     await rebuildEventLogFromCurrentPath({ ctx, live })
-    await syncRuntime({ svc: this, live })
+    await this.syncLiveRuntime(live)
     return { branched: true, targetEntryId: lastUserEntry.parentId }
   }
 
@@ -651,9 +696,11 @@ export class SessionsService extends Service.create({
     if (existing) return existing
     const inflight = this.activating.get(sessionId)
     if (inflight) return inflight
-    const p = activate({ svc: this, sessionId }).finally(() =>
-      this.activating.delete(sessionId),
-    )
+    await this.pruneLiveSessions("before-activate")
+    await this.ctx.auth.ready()
+    const p = loadActivationModule()
+      .then(({ activate }) => activate({ svc: this, sessionId }))
+      .finally(() => this.activating.delete(sessionId))
     this.activating.set(sessionId, p)
     return p
   }
@@ -661,6 +708,119 @@ export class SessionsService extends Service.create({
   /** Re-exported so helper modules can call it without importing
    * the activation module separately. */
   resolveSessionLabelSnapshot(sessionId: string): string {
-    return resolveSessionLabelSnapshot({ svc: this, sessionId })
+    return resolveSessionLabelSnapshotLocal({ svc: this, sessionId })
   }
+
+  private async syncLiveRuntime(live: LiveSession): Promise<void> {
+    const { syncRuntime } = await loadActivationModule()
+    await syncRuntime({ svc: this, live })
+  }
+
+  disposeLiveSession(sessionId: string, reason: string): boolean {
+    const live = this.live.get(sessionId)
+    if (!live) return false
+    this.live.delete(sessionId)
+    this.activating.delete(sessionId)
+    this.queueLocks.delete(sessionId)
+    try {
+      live.dispose()
+    } catch (err) {
+      console.warn(
+        `[sessions] disposeLiveSession failed (${reason}) for ${sessionId}:`,
+        err instanceof Error ? err.message : err,
+      )
+    }
+    return true
+  }
+
+  private async pruneLiveSessions(reason: string): Promise<void> {
+    if (this.live.size === 0) return
+    const now = Date.now()
+    const sessions = this.ctx.db.client.readRoot().app.sessions
+    const candidates = [...this.live.entries()]
+      .filter(([, live]) => isDisposableLiveSession(live))
+      .map(([sessionId, live]) => ({
+        sessionId,
+        lastActivityAt: sessions[sessionId]?.lastActivityAt ?? 0,
+        live,
+      }))
+      .sort((a, b) => a.lastActivityAt - b.lastActivityAt)
+
+    for (const candidate of candidates) {
+      if (now - candidate.lastActivityAt < LIVE_SESSION_IDLE_MS) continue
+      this.disposeLiveSession(candidate.sessionId, reason)
+    }
+
+    if (this.live.size <= MAX_LIVE_SESSIONS) return
+    for (const candidate of candidates) {
+      if (this.live.size <= MAX_LIVE_SESSIONS) return
+      this.disposeLiveSession(candidate.sessionId, "capacity")
+    }
+  }
+}
+
+function resolveSessionLabelSnapshotLocal(args: {
+  svc: SessionsService
+  sessionId: string
+}): string {
+  const { svc, sessionId } = args
+  const root = svc.ctx.db.client.readRoot()
+  const summary = root.app.sessionMeta[sessionId]?.summary?.text?.trim()
+  if (summary) return summary
+  const session = root.app.sessions[sessionId]
+  if (!session) return ""
+  const branchSummary = session.branchSummary?.trim()
+  if (branchSummary) return branchSummary
+  const title = session.title?.trim()
+  if (title && title !== "Untitled") return title
+  return ""
+}
+
+function isDisposableLiveSession(live: LiveSession): boolean {
+  return (
+    live.subscribers.size === 0 &&
+    !live.inAgentLoop &&
+    !live.pi.isStreaming
+  )
+}
+
+function spawnBufferedWithTimeout(
+  cmd: string,
+  args: string[],
+  timeoutMs: number,
+): Promise<{
+  stdout: string
+  stderr: string
+  code: number | null
+  status: number | null
+}> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] })
+    let stdout = ""
+    let stderr = ""
+    let settled = false
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      proc.kill()
+      reject(new Error(`${cmd} timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+    timer.unref?.()
+    const finish = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      fn()
+    }
+    proc.stdout?.on("data", chunk => {
+      stdout += String(chunk)
+    })
+    proc.stderr?.on("data", chunk => {
+      stderr += String(chunk)
+    })
+    proc.on("error", err => finish(() => reject(err)))
+    proc.on("close", code =>
+      finish(() => resolve({ stdout, stderr, code, status: code })),
+    )
+  })
 }

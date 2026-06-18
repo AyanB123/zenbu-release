@@ -147,6 +147,7 @@ export default defineConfig({
       "packages/ui/**",
       ".gitignore",
       "package.json",
+      "patches/**",
       "pnpm-lock.yaml",
       "pnpm-workspace.yaml",
       "tsconfig.json",

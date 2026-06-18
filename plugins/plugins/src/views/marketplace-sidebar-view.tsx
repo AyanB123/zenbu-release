@@ -15,6 +15,14 @@ import {
   useInstalledPlugins,
   type InstalledPluginListing,
 } from "../lib/plugin-enabled-store";
+import {
+  piPackageDetailId,
+  useInstalledPiPackages,
+  usePiCatalog,
+  useRefreshPiPackages,
+  type PiInstalledPackage,
+  type PiPackageListing,
+} from "../lib/pi-package-store";
 
 const SIDEBAR_FOOTER_HEIGHT = 44;
 const SIDEBAR_FOOTER_FADE = 24;
@@ -120,19 +128,43 @@ function ListPane({
   const marketplaceEnabled = useDb((root) => root.plugins.enabled);
 
   const installed = useInstalledPlugins();
+  const installedPiPackages = useInstalledPiPackages();
+  const piCatalog = usePiCatalog();
+  const refreshPiPackages = useRefreshPiPackages();
   const icons = useDb((root) => root.app.pluginIcons) ?? {};
   const catalog = useDb((root) => root.plugins.catalog) ?? {};
+
+  useEffect(() => {
+    refreshPiPackages();
+  }, [refreshPiPackages]);
 
   const filteredInstalled = useMemo(() => {
     if (!lowerQ) return installed;
     return installed.filter((p) => p.name.toLowerCase().includes(lowerQ));
   }, [installed, lowerQ]);
 
+  const filteredInstalledPiPackages = useMemo(() => {
+    if (!lowerQ) return installedPiPackages;
+    return installedPiPackages.filter((pkg) => {
+      return (
+        pkg.name.toLowerCase().includes(lowerQ) ||
+        pkg.source.toLowerCase().includes(lowerQ) ||
+        (pkg.description ?? "").toLowerCase().includes(lowerQ)
+      );
+    });
+  }, [installedPiPackages, lowerQ]);
+
   const installedKeys = useMemo(() => {
     const set = new Set<string>();
     for (const p of installed) set.add(p.name.toLowerCase());
     return set;
   }, [installed]);
+
+  const installedPiKeys = useMemo(() => {
+    const set = new Set<string>();
+    for (const pkg of installedPiPackages) set.add(pkg.source.toLowerCase());
+    return set;
+  }, [installedPiPackages]);
 
   // Read the locally-cached browse feed (refreshed by the service).
   // No per-mount fetch -> navigating back is instant, no flash.
@@ -155,6 +187,19 @@ function ListPane({
     });
   }, [feed, installedKeys, lowerQ]);
 
+  const filteredPiCatalog = useMemo<PiPackageListing[]>(() => {
+    return piCatalog.filter((pkg) => {
+      if (installedPiKeys.has(pkg.source.toLowerCase())) return false;
+      if (!lowerQ) return true;
+      return (
+        pkg.name.toLowerCase().includes(lowerQ) ||
+        pkg.description.toLowerCase().includes(lowerQ) ||
+        pkg.source.toLowerCase().includes(lowerQ) ||
+        pkg.tags.some((tag) => tag.toLowerCase().includes(lowerQ))
+      );
+    });
+  }, [installedPiKeys, lowerQ, piCatalog]);
+
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       <div
@@ -172,7 +217,9 @@ function ListPane({
           style={{ paddingBottom: BODY_BOTTOM_PAD }}
         >
           {filteredInstalled.length === 0 &&
-          filteredMarketplace.length === 0 ? (
+          filteredMarketplace.length === 0 &&
+          filteredPiCatalog.length === 0 &&
+          filteredInstalledPiPackages.length === 0 ? (
             <div className="px-2 py-6 text-center text-[12px] text-muted-foreground">
               {lowerQ ? "No matches." : "No plugins installed."}
             </div>
@@ -182,6 +229,22 @@ function ListPane({
                 <Section label="Marketplace">
                   <MarketplaceResults
                     plugins={filteredMarketplace}
+                    activePluginId={activePluginId}
+                  />
+                </Section>
+              )}
+              {filteredPiCatalog.length > 0 && (
+                <Section label="Pi Packages">
+                  <PiPackageResults
+                    packages={filteredPiCatalog}
+                    activePluginId={activePluginId}
+                  />
+                </Section>
+              )}
+              {filteredInstalledPiPackages.length > 0 && (
+                <Section label="Installed Pi Packages">
+                  <InstalledPiPackageList
+                    packages={filteredInstalledPiPackages}
                     activePluginId={activePluginId}
                   />
                 </Section>
@@ -667,6 +730,101 @@ function MarketplaceResults({
         />
       ))}
     </ul>
+  );
+}
+
+function PiPackageResults({
+  packages,
+  activePluginId,
+}: {
+  packages: PiPackageListing[];
+  activePluginId: string | null;
+}) {
+  const rpc = useRpc();
+  const openDetail = (pkg: PiPackageListing) => {
+    void rpc.plugins.marketplace
+      .openDetailInPane({ pluginId: piPackageDetailId(pkg.source) })
+      .catch((err) => {
+        console.error("[marketplace-sidebar] open Pi package detail failed:", err);
+      });
+  };
+  return (
+    <ul className="flex flex-col gap-0.5">
+      {packages.map((pkg) => (
+        <PluginRow
+          key={pkg.source}
+          thumb={
+            <ThumbTile>
+              <PiIcon />
+            </ThumbTile>
+          }
+          title={pkg.name}
+          description={pkg.description}
+          meta={<PiPackageMeta pkg={pkg} />}
+          active={activePluginId === piPackageDetailId(pkg.source)}
+          onClick={() => openDetail(pkg)}
+        />
+      ))}
+    </ul>
+  );
+}
+
+function InstalledPiPackageList({
+  packages,
+  activePluginId,
+}: {
+  packages: PiInstalledPackage[];
+  activePluginId: string | null;
+}) {
+  const rpc = useRpc();
+  const openDetail = (pkg: PiInstalledPackage) => {
+    void rpc.plugins.marketplace
+      .openDetailInPane({ pluginId: piPackageDetailId(pkg.source, pkg.scope) })
+      .catch((err) => {
+        console.error("[marketplace-sidebar] open installed Pi package failed:", err);
+      });
+  };
+  return (
+    <ul className="flex flex-col gap-0.5">
+      {packages.map((pkg) => (
+        <PluginRow
+          key={`${pkg.scope}:${pkg.source}`}
+          thumb={
+            <ThumbTile>
+              <PiIcon />
+            </ThumbTile>
+          }
+          title={pkg.name}
+          description={pkg.description}
+          meta={<InstalledPiPackageMeta pkg={pkg} />}
+          muted={!pkg.enabled || !pkg.installed}
+          active={activePluginId === piPackageDetailId(pkg.source, pkg.scope)}
+          onClick={() => openDetail(pkg)}
+        />
+      ))}
+    </ul>
+  );
+}
+
+function PiPackageMeta({ pkg }: { pkg: PiPackageListing }) {
+  return (
+    <>
+      <span className="min-w-0 truncate">{pkg.source}</span>
+      <span className="ml-auto shrink-0 uppercase tracking-normal">
+        {pkg.types.join(" / ")}
+      </span>
+    </>
+  );
+}
+
+function InstalledPiPackageMeta({ pkg }: { pkg: PiInstalledPackage }) {
+  return (
+    <>
+      <span className="min-w-0 truncate">{pkg.scope}</span>
+      <span className="ml-auto shrink-0">
+        {!pkg.installed ? "Missing" : pkg.enabled ? "Enabled" : "Disabled"}
+      </span>
+    </>
   );
 }
 

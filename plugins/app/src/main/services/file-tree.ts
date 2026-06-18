@@ -14,6 +14,7 @@ type FileTreeIndex = Schema["fileTreeIndexes"][string]
 
 const MAX_PATHS = 20_000
 const MAX_FILE_BYTES = 2 * 1024 * 1024
+const MAX_FILE_WATCHERS = 50
 /** How many paths to accumulate between intermediate DB publishes during a
  * full walk. Tuned so that the menu paints within ~50ms on a cold start
  * for typical repos. */
@@ -21,6 +22,11 @@ const WALK_PUBLISH_CHUNK = 500
 /** Debounce for FS-watcher-triggered re-indexes. Bursty saves (e.g. `pnpm
  * install`) collapse into a single walk. */
 const WATCH_DEBOUNCE_MS = 250
+/** Windows recursive fs.watch can report generated writes without a relative
+ * filename. Suppress those briefly around our own DB writes so indexing cannot
+ * trigger itself forever. */
+const WATCH_SELF_WRITE_SUPPRESS_MS = 1500
+
 
 /**
  * Registers three views and maintains a per-scope file index in
@@ -55,10 +61,14 @@ export class FileTreeService extends Service.create({
   /** Scope ids we have an in-flight indexing job for. Prevents re-entrancy
    * if `scopes` fires twice in quick succession. */
   private indexing = new Set<string>()
+  /** Latest re-index request that arrived while a scope was already walking. */
+  private pendingIndex = new Map<string, string>()
   /** Active FS watchers keyed by scopeId. */
   private watchers = new Map<string, { watcher: FSWatcher; directory: string }>()
   /** Debounce timers for watcher-triggered re-indexes. */
   private watchTimers = new Map<string, NodeJS.Timeout>()
+  /** Per-scope deadline for ignoring ambiguous watcher events from our DB writes. */
+  private suppressAmbiguousWatchUntil = new Map<string, number>()
 
   evaluate() {
     this.setup("inject-file-tree-view", () =>
@@ -95,8 +105,12 @@ export class FileTreeService extends Service.create({
         unsub()
         for (const t of this.watchTimers.values()) clearTimeout(t)
         this.watchTimers.clear()
-        for (const { watcher } of this.watchers.values()) watcher.close()
+        this.pendingIndex.clear()
+        for (const [scopeId, { watcher }] of this.watchers) {
+          closeWatcher(watcher, `scope ${scopeId}`)
+        }
         this.watchers.clear()
+        this.suppressAmbiguousWatchUntil.clear()
       }
     })
   }
@@ -133,6 +147,29 @@ export class FileTreeService extends Service.create({
     const abs = safeJoin(args.directory, args.path)
     const stat = await fs.stat(abs)
     if (!stat.isFile()) throw new Error(`not a file: ${args.path}`)
+    if (stat.size > MAX_FILE_BYTES) {
+      const handle = await fs.open(abs, "r")
+      try {
+        const sample = Buffer.allocUnsafe(MAX_FILE_BYTES)
+        const { bytesRead } = await handle.read(
+          sample,
+          0,
+          MAX_FILE_BYTES,
+          0,
+        )
+        const buf = sample.subarray(0, bytesRead)
+        if (looksBinary(buf)) {
+          return { content: "", truncated: false, binary: true }
+        }
+        return {
+          content: buf.toString("utf8"),
+          truncated: true,
+          binary: false,
+        }
+      } finally {
+        await handle.close()
+      }
+    }
     const buf = await fs.readFile(abs)
     if (looksBinary(buf)) {
       return { content: "", truncated: false, binary: true }
@@ -187,11 +224,19 @@ export class FileTreeService extends Service.create({
       const existingWatcher = this.watchers.get(scope.id)
       const dirChanged = existingWatcher?.directory !== scope.directory
       if (dirChanged) {
-        existingWatcher?.watcher.close()
+        if (existingWatcher) {
+          closeWatcher(existingWatcher.watcher, `scope ${scope.id}`)
+        }
         this.watchers.delete(scope.id)
         this.startWatcher(scope.id, scope.directory)
       }
-      if (existing && existing.directory === scope.directory) continue
+      if (
+        existing &&
+        existing.directory === scope.directory &&
+        existing.status !== "indexing"
+      ) {
+        continue
+      }
       void this.indexScope(scope.id, scope.directory)
     }
 
@@ -204,11 +249,13 @@ export class FileTreeService extends Service.create({
     }
     for (const id of Array.from(this.watchers.keys())) {
       if (liveIds.has(id)) continue
-      this.watchers.get(id)?.watcher.close()
+      const watcher = this.watchers.get(id)?.watcher
+      if (watcher) closeWatcher(watcher, `scope ${id}`)
       this.watchers.delete(id)
       const t = this.watchTimers.get(id)
       if (t) clearTimeout(t)
       this.watchTimers.delete(id)
+      this.pendingIndex.delete(id)
     }
   }
 
@@ -217,6 +264,12 @@ export class FileTreeService extends Service.create({
    * with `recursive: true` — supported on macOS and Windows natively,
    * and on Linux from Node 20 onward (which Electron 28+ bundles). */
   private startWatcher(scopeId: string, directory: string): void {
+    if (!this.watchers.has(scopeId) && this.watchers.size >= MAX_FILE_WATCHERS) {
+      console.warn(
+        `[fileTree] watcher limit reached (${MAX_FILE_WATCHERS}); skipping watcher for ${directory}`,
+      )
+      return
+    }
     let watcher: FSWatcher
     try {
       watcher = watch(
@@ -228,13 +281,21 @@ export class FileTreeService extends Service.create({
           // `fs.watch({ recursive: true })` reports paths relative to
           // the watched root. When the watched root is a parent folder
           // containing repos/worktrees, generated writes show up as e.g.
-          // `repo/.zenbu/db/...`, so checking only the first segment lets
-          // Zenbu's own DB writes trigger an endless reindex loop.
-          if (
-            typeof filename === "string" &&
-            shouldIgnoreWatchedPath(filename)
-          ) {
-            return
+          // `repo/.zenbu/db/...`, so checking every segment prevents
+          // Zenbu's own DB writes from triggering an endless reindex loop.
+          if (typeof filename === "string") {
+            if (shouldIgnoreWatchedPath(filename)) return
+          } else {
+            const suppressUntil =
+              this.suppressAmbiguousWatchUntil.get(scopeId) ?? 0
+            if (this.indexing.has(scopeId) || Date.now() < suppressUntil) {
+              if (process.env.ZENBU_FILE_TREE_TRACE === "1") {
+                console.info(
+                  `[fileTree-trace] ignored ambiguous watcher event scope=${scopeId}`,
+                )
+              }
+              return
+            }
           }
           this.scheduleReindex(scopeId, directory)
         },
@@ -269,15 +330,23 @@ export class FileTreeService extends Service.create({
       }
       void this.indexScope(scopeId, directory)
     }, WATCH_DEBOUNCE_MS)
+    t.unref?.()
     this.watchTimers.set(scopeId, t)
   }
 
   private async indexScope(scopeId: string, directory: string): Promise<void> {
-    if (this.indexing.has(scopeId)) return
+    if (this.indexing.has(scopeId)) {
+      this.pendingIndex.set(scopeId, directory)
+      if (process.env.ZENBU_FILE_TREE_TRACE === "1") {
+        console.info(`[fileTree-trace] indexScope queued scope=${scopeId}`)
+      }
+      return
+    }
     this.indexing.add(scopeId)
     const trace = process.env.ZENBU_FILE_TREE_TRACE === "1"
     let concatBatches = 0
     let concatItems = 0
+    this.suppressWatcherSelfWrites(scopeId)
     const previousPathsRef = this.ctx.db.client.readRoot().app.fileTreeIndexes[
       scopeId
     ]?.paths ?? null
@@ -319,6 +388,7 @@ export class FileTreeService extends Service.create({
           batch,
         )
         if (trace) {
+        this.suppressWatcherSelfWrites(scopeId)
           concatBatches++
           concatItems += batch.length
         }
@@ -332,6 +402,7 @@ export class FileTreeService extends Service.create({
           tail,
         )
         if (trace) {
+        this.suppressWatcherSelfWrites(scopeId)
           concatBatches++
           concatItems += tail.length
         }
@@ -339,6 +410,7 @@ export class FileTreeService extends Service.create({
 
       await this.ctx.db.client.update(root => {
         const cur = root.app.fileTreeIndexes[scopeId]
+        this.suppressWatcherSelfWrites(scopeId)
         if (!cur || cur.directory !== directory) return
         if (cur.paths.collectionId !== pathsRef.collectionId) return
         cur.status = "idle"
@@ -364,6 +436,7 @@ export class FileTreeService extends Service.create({
       const message = err instanceof Error ? err.message : String(err)
       await this.ctx.db.client.update(root => {
         const cur = root.app.fileTreeIndexes[scopeId]
+        this.suppressWatcherSelfWrites(scopeId)
         root.app.fileTreeIndexes[scopeId] = {
           scopeId,
           directory,
@@ -382,7 +455,25 @@ export class FileTreeService extends Service.create({
       }
     } finally {
       this.indexing.delete(scopeId)
+      const pendingDirectory = this.pendingIndex.get(scopeId)
+      if (pendingDirectory) {
+        this.pendingIndex.delete(scopeId)
+        const scope = this.ctx.db.client.readRoot().app.scopes[scopeId]
+        if (scope && scope.directory === pendingDirectory) {
+          queueMicrotask(() => {
+            void this.indexScope(scopeId, pendingDirectory)
+            this.suppressWatcherSelfWrites(scopeId)
+          })
+        }
+      }
     }
+  }
+
+  private suppressWatcherSelfWrites(scopeId: string): void {
+    this.suppressAmbiguousWatchUntil.set(
+      scopeId,
+      Date.now() + WATCH_SELF_WRITE_SUPPRESS_MS,
+    )
   }
 }
 
@@ -401,6 +492,17 @@ async function removeCollectionDir(
   })
 }
 
+function closeWatcher(watcher: FSWatcher, label: string): void {
+  try {
+    watcher.close()
+  } catch (err) {
+    console.warn(
+      `[fileTree] failed to close watcher for ${label}:`,
+      err instanceof Error ? err.message : err,
+    )
+  }
+}
+
 async function walk(
   root: string,
   rel: string,
@@ -411,7 +513,13 @@ async function walk(
   let entries: import("node:fs").Dirent[]
   try {
     entries = await fs.readdir(path.join(root, rel), { withFileTypes: true })
-  } catch {
+  } catch (err) {
+    if (process.env.ZENBU_FILE_TREE_TRACE === "1") {
+      console.warn(
+        `[fileTree-trace] readdir failed for ${path.join(root, rel)}:`,
+        err instanceof Error ? err.message : err,
+      )
+    }
     return
   }
   for (const entry of entries) {

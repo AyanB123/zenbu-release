@@ -1,5 +1,6 @@
 import crypto from "node:crypto"
 import fs from "node:fs"
+import fsp from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { Service } from "@zenbujs/core/runtime"
@@ -107,10 +108,10 @@ type DiscoveredIcon = {
  * the sidebar lands alphabetic without the renderer having to
  * re-sort.
  */
-function buildListings(
+async function buildListings(
   snapshot: ConfigSnapshot,
   manifestRows: PluginManifestRow[],
-): PluginListing[] {
+): Promise<PluginListing[]> {
   // Enabled (loaded) zenbu plugins come from the config snapshot —
   // it's authoritative for names/dirs and covers core plugins
   // declared in `zenbu.config.ts` (which never appear in the
@@ -132,7 +133,7 @@ function buildListings(
       tag: isCorePluginDir(p.dir) ? "core" : null,
       enabled: true,
       pluginFile: pathByDir.get(key) ?? null,
-      ...readPackageMeta(p.dir),
+      ...(await readPackageMeta(p.dir)),
     })
   }
 
@@ -150,14 +151,19 @@ function buildListings(
       tag: isCorePluginDir(dir) ? "core" : null,
       enabled: false,
       pluginFile: row.path,
-      ...readPackageMeta(dir),
+      ...(await readPackageMeta(dir)),
     })
   }
 
-  const fromPi: PluginListing[] = readPiExtensions()
+  const fromPi: PluginListing[] = await readPiExtensions()
   // Drop anything whose source is gone from disk.
-  return [...byDir.values(), ...fromPi]
-    .filter(p => fs.existsSync(p.dir))
+  const existing = await Promise.all(
+    [...byDir.values(), ...fromPi].map(async p =>
+      (await pathExists(p.dir)) ? p : null,
+    ),
+  )
+  return existing
+    .filter((p): p is PluginListing => p != null)
     .sort((a, b) =>
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
     )
@@ -165,11 +171,11 @@ function buildListings(
 
 // Read package.json metadata (canonical local source) so the UI
 // doesn't read files per-row. Nulls for missing/unparseable fields.
-function readPackageMeta(pluginDir: string): PackageMeta {
+async function readPackageMeta(pluginDir: string): Promise<PackageMeta> {
   const empty: PackageMeta = { description: null, author: null, version: null }
   let raw: string
   try {
-    raw = fs.readFileSync(path.join(pluginDir, "package.json"), "utf8")
+    raw = await fsp.readFile(path.join(pluginDir, "package.json"), "utf8")
   } catch {
     return empty
   }
@@ -203,12 +209,12 @@ function isCorePluginDir(pluginDir: string): boolean {
   return resolved.startsWith(HOST_PLUGINS_DIR + path.sep)
 }
 
-function readPiExtensions(): PluginListing[] {
+async function readPiExtensions(): Promise<PluginListing[]> {
   const out: PluginListing[] = []
   for (const dir of [PI_EXTENSIONS_DIR, PI_EXTENSIONS_DISABLED_DIR]) {
     let entries: string[]
     try {
-      entries = fs.readdirSync(dir)
+      entries = await fsp.readdir(dir)
     } catch {
       continue
     }
@@ -216,7 +222,7 @@ function readPiExtensions(): PluginListing[] {
       if (!entry.endsWith(".ts")) continue
       const abs = path.join(dir, entry)
       try {
-        const stat = fs.statSync(abs)
+        const stat = await fsp.stat(abs)
         if (!stat.isFile()) continue
       } catch {
         continue
@@ -260,12 +266,12 @@ function listingsEqual(a: PluginListing[], b: PluginListing[]): boolean {
   return true
 }
 
-function discoverIcon(pluginDir: string): DiscoveredIcon | null {
+async function discoverIcon(pluginDir: string): Promise<DiscoveredIcon | null> {
   for (const rel of ICON_CANDIDATES) {
     const abs = path.join(pluginDir, rel)
     let stat: fs.Stats
     try {
-      stat = fs.statSync(abs)
+      stat = await fsp.stat(abs)
     } catch {
       continue
     }
@@ -274,7 +280,7 @@ function discoverIcon(pluginDir: string): DiscoveredIcon | null {
     }
     let bytes: Buffer
     try {
-      bytes = fs.readFileSync(abs)
+      bytes = await fsp.readFile(abs)
     } catch {
       continue
     }
@@ -285,6 +291,15 @@ function discoverIcon(pluginDir: string): DiscoveredIcon | null {
     return { bytes, mime, sourcePath: abs, hash }
   }
   return null
+}
+
+async function pathExists(target: string): Promise<boolean> {
+  try {
+    await fsp.access(target)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -339,7 +354,11 @@ export class PluginRegistryMirrorService extends Service.create({
   private async pruneMissing(): Promise<void> {
     const listings = this.ctx.db.client.readRoot().app
       .plugins as PluginListing[]
-    const gone = listings.filter(p => !fs.existsSync(p.dir))
+    const gone = (
+      await Promise.all(
+        listings.map(async p => ((await pathExists(p.dir)) ? null : p)),
+      )
+    ).filter((p): p is PluginListing => p != null)
     if (gone.length === 0) return
 
     const goneNames = new Set(gone.map(p => p.name))
@@ -374,29 +393,29 @@ export class PluginRegistryMirrorService extends Service.create({
         err,
       )
     }
-    const next = buildListings(snapshot, manifestRows)
+    const next = await buildListings(snapshot, manifestRows)
 
     // Discover icons on disk before opening a DB update — we don't
     // want to hold an update transaction while reading files. Pi
     // extensions don't have an `assets/` directory; they're single
     // .ts files. Skip icon discovery for them — the sidebar's
     // built-in puzzle glyph fallback covers it.
-    const discovered = new Map<string, DiscoveredIcon | null>()
-    for (const p of next) {
-      if (p.kind !== "plugin") {
-        discovered.set(p.name, null)
-        continue
-      }
-      try {
-        discovered.set(p.name, discoverIcon(p.dir))
-      } catch (err) {
-        console.error(
-          `[plugin-registry-mirror] icon discovery failed for ${p.name}:`,
-          err,
-        )
-        discovered.set(p.name, null)
-      }
-    }
+    const discovered = new Map(
+      await Promise.all(
+        next.map(async p => {
+          if (p.kind !== "plugin") return [p.name, null] as const
+          try {
+            return [p.name, await discoverIcon(p.dir)] as const
+          } catch (err) {
+            console.error(
+              `[plugin-registry-mirror] icon discovery failed for ${p.name}:`,
+              err,
+            )
+            return [p.name, null] as const
+          }
+        }),
+      ),
+    )
 
     const rootSnapshot = this.ctx.db.client.readRoot()
     const prevIcons = (rootSnapshot.app.pluginIcons ?? {}) as Record<

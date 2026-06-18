@@ -1,0 +1,12 @@
+{
+  "id": "ad81b51c-a826-4560-86dc-b21bae9a4fec",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "fields": {
+    "panels": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "b91fd8f1bc2b5700",
+      "default": {}
+    }
+  }
+}

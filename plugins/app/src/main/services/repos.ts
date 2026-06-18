@@ -440,7 +440,9 @@ export class ReposService extends Service.create({
               "worktree",
               "prune",
             ])
-          } catch {}
+          } catch (err) {
+            console.warn("[repos] git worktree prune fallback failed:", err)
+          }
           try {
             await fsp.rm(directory, { recursive: true, force: true })
           } catch (rmErr) {
@@ -561,7 +563,9 @@ export class ReposService extends Service.create({
     for (const watcher of w.watchers) {
       try {
         watcher.close()
-      } catch {}
+      } catch (err) {
+        console.warn("[repos] watcher close failed for", w.repoId, err)
+      }
     }
   }
 }
@@ -591,7 +595,9 @@ async function resolveMainWorktree(
     )
     const candidate = stdout.trim()
     if (candidate) return candidate
-  } catch {}
+  } catch (err) {
+    console.warn("[repos] failed to resolve main worktree for", commonDir, err)
+  }
   return path.dirname(commonDir)
 }
 
@@ -602,7 +608,8 @@ async function listWorktrees(probeDir: string): Promise<Repo["worktrees"][number
       ["-C", probeDir, "worktree", "list", "--porcelain"],
     )
     return parseWorktreePorcelain(stdout)
-  } catch {
+  } catch (err) {
+    console.warn("[repos] failed to list worktrees for", probeDir, err)
     return []
   }
 }

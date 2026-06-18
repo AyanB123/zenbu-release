@@ -53,3 +53,12 @@ traces/
 experiments/
 tmp
 .vercel
+
+# Local agent/tool state (not portable across machines)
+.omx/
+.firecrawl/
+.patch-work/
+
+# Machine-specific local MCP debug config (hardcoded python/cwd paths).
+# Copy and edit locally; do not commit.
+mcp/zenbu-debug.mcpify.json

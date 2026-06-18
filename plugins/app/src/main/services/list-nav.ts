@@ -180,7 +180,9 @@ export class ListNavService extends Service.create({
     for (const u of existing) {
       try {
         u()
-      } catch {}
+      } catch (err) {
+        console.warn("[list-nav] scope disposer failed:", err)
+      }
     }
     this.scopes.delete(id)
   }

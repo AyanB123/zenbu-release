@@ -33,7 +33,7 @@ export class AppsService extends Service.create({
    * package's `name` field is missing.
    */
   async list(): Promise<{ rows: AppEntry[] }> {
-    if (!fs.existsSync(APPS_ROOT)) return { rows: [] }
+    if (!(await pathExists(APPS_ROOT))) return { rows: [] }
     const slugs = await fs.promises.readdir(APPS_ROOT)
     const rows: AppEntry[] = []
     for (const slug of slugs) {
@@ -62,7 +62,7 @@ export class AppsService extends Service.create({
         displayName,
         version,
         sourceDir,
-        bundlePath: resolveBundlePath(displayName),
+        bundlePath: await resolveBundlePath(displayName),
       })
     }
     rows.sort((a, b) => a.displayName.localeCompare(b.displayName))
@@ -95,7 +95,7 @@ export class AppsService extends Service.create({
     const row = await this.find(args.slug)
     if (!row?.bundlePath) return { dataUrl: null }
     try {
-      const icns = findIcnsInBundle(row.bundlePath)
+      const icns = await findIcnsInBundle(row.bundlePath)
       if (!icns) return { dataUrl: null }
       const tmp = path.join(
         os.tmpdir(),
@@ -112,7 +112,9 @@ export class AppsService extends Service.create({
         tmp,
       ])
       const buf = await fs.promises.readFile(tmp)
-      await fs.promises.unlink(tmp).catch(() => {})
+      await fs.promises.unlink(tmp).catch(err =>
+        console.warn("[apps] temporary icon cleanup failed for", tmp, err),
+      )
       const b64 = buf.toString("base64")
       return { dataUrl: `data:image/png;base64,${b64}` }
     } catch (err) {
@@ -132,13 +134,13 @@ export class AppsService extends Service.create({
  * `/Applications/<displayName>.app`, otherwise `~/Applications/...`.
  * Returns `null` when neither bundle exists yet.
  */
-function resolveBundlePath(displayName: string): string | null {
+async function resolveBundlePath(displayName: string): Promise<string | null> {
   const candidates = [
     path.join("/Applications", `${displayName}.app`),
     path.join(os.homedir(), "Applications", `${displayName}.app`),
   ]
   for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate
+    if (await pathExists(candidate)) return candidate
   }
   return null
 }
@@ -149,12 +151,12 @@ function resolveBundlePath(displayName: string): string | null {
  * electron-builder occasionally names it after the app (e.g. `app.icns`),
  * so we scan instead of guessing.
  */
-function findIcnsInBundle(bundlePath: string): string | null {
+async function findIcnsInBundle(bundlePath: string): Promise<string | null> {
   const resources = path.join(bundlePath, "Contents", "Resources")
-  if (!fs.existsSync(resources)) return null
+  if (!(await pathExists(resources))) return null
   let entries: string[]
   try {
-    entries = fs.readdirSync(resources)
+    entries = await fs.promises.readdir(resources)
   } catch {
     return null
   }
@@ -164,4 +166,13 @@ function findIcnsInBundle(bundlePath: string): string | null {
     }
   }
   return null
+}
+
+async function pathExists(target: string): Promise<boolean> {
+  try {
+    await fs.promises.access(target)
+    return true
+  } catch {
+    return false
+  }
 }

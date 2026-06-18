@@ -8,6 +8,7 @@
     ".": "./zenbu.plugin.ts"
   },
   "dependencies": {
+    "@earendil-works/pi-coding-agent": "^0.78.0",
     "@zenbu/ui": "workspace:*",
     "@zenbujs/core": "^0.4.0",
     "lucide-react": "^1.16.0",

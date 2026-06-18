@@ -13,7 +13,9 @@ export class ShellEnvService extends Service.create({
   evaluate() {
     // warm the cache; don't block startup on it
     this.pending = this.resolve();
-    void this.pending.catch(() => {});
+    void this.pending.catch(err =>
+      console.warn("[shell-env] background resolve failed:", err),
+    );
   }
 
   async getEnv(): Promise<NodeJS.ProcessEnv> {

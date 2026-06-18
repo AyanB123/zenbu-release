@@ -4,8 +4,7 @@ import { Service } from "@zenbujs/core/runtime"
 import {
   RpcService,
 } from "@zenbujs/core/services"
-import { resolveSmallModel } from "../summaries/resolve-model"
-import { complete, type Context } from "@earendil-works/pi-ai"
+import type { Context } from "@earendil-works/pi-ai"
 
 const execFileP = promisify(execFile)
 
@@ -17,6 +16,18 @@ const MAX_AI_DIFF_LINES = 1500
 /** Cap how much patch we feed `gh` for a PR body fallback. PR bodies
  *  are not the place to dump a 500kb patch. */
 const MAX_GENERATED_BODY_BYTES = 16_000
+
+async function completeWithSmallModel(
+  context: Context,
+  maxTokens: number,
+) {
+  const [{ resolveSmallModel }, { complete }] = await Promise.all([
+    import("../summaries/resolve-model"),
+    import("@earendil-works/pi-ai"),
+  ])
+  const { model, apiKey, headers } = await resolveSmallModel()
+  return complete(model, context, { apiKey, headers, maxTokens })
+}
 
 export type GhCommit = {
   sha: string
@@ -194,21 +205,33 @@ export class GithubService extends Service.create({
   }): Promise<void> {
     const mode = args.mode ?? "create"
     if (mode === "list") {
-      void this.listPullRequests({ directory: args.directory, state: "open" }).catch(() => {})
+      void this.listPullRequests({ directory: args.directory, state: "open" }).catch(err =>
+        this.logPrefetchFailure("list pull requests", err),
+      )
       // Repo info is cheap and the back button might land on the
       // composer, which needs it.
-      void this.getRepoInfo({ directory: args.directory }).catch(() => {})
+      void this.getRepoInfo({ directory: args.directory }).catch(err =>
+        this.logPrefetchFailure("repo info", err),
+      )
       return
     }
     if (mode === "detail" && args.prNumber != null) {
-      void this.getPullRequest({ directory: args.directory, number: args.prNumber }).catch(() => {})
-      void this.getPullRequestDiff({ directory: args.directory, number: args.prNumber }).catch(() => {})
+      void this.getPullRequest({ directory: args.directory, number: args.prNumber }).catch(err =>
+        this.logPrefetchFailure("pull request", err),
+      )
+      void this.getPullRequestDiff({ directory: args.directory, number: args.prNumber }).catch(err =>
+        this.logPrefetchFailure("pull request diff", err),
+      )
       return
     }
     // "create" — by far the most common entry. Kick off everything
     // the composer's initial load needs in parallel.
-    void this.getWorkingTreeSummary({ directory: args.directory }).catch(() => {})
-    void this.listPullRequests({ directory: args.directory, state: "open" }).catch(() => {})
+    void this.getWorkingTreeSummary({ directory: args.directory }).catch(err =>
+      this.logPrefetchFailure("working tree summary", err),
+    )
+    void this.listPullRequests({ directory: args.directory, state: "open" }).catch(err =>
+      this.logPrefetchFailure("list pull requests", err),
+    )
     const repo = await this.getRepoInfo({ directory: args.directory }).catch(
       () => null,
     )
@@ -216,8 +239,12 @@ export class GithubService extends Service.create({
       void this.getBranchCommits({
         directory: args.directory,
         base: repo.defaultBranch,
-      }).catch(() => {})
+      }).catch(err => this.logPrefetchFailure("branch commits", err))
     }
+  }
+
+  private logPrefetchFailure(label: string, err: unknown): void {
+    console.warn(`[github] ${label} prefetch failed:`, err)
   }
 
   /**
@@ -937,7 +964,6 @@ export class GithubService extends Service.create({
     }
     const diff = trimDiff(summary.patch, MAX_AI_DIFF_BYTES, MAX_AI_DIFF_LINES)
     try {
-      const { model, apiKey, headers } = await resolveSmallModel()
       const context: Context = {
         systemPrompt: COMMIT_MESSAGE_SYSTEM_PROMPT,
         messages: [
@@ -949,11 +975,7 @@ export class GithubService extends Service.create({
         ],
         tools: [],
       }
-      const message = await complete(model, context, {
-        apiKey,
-        headers,
-        maxTokens: 600,
-      })
+      const message = await completeWithSmallModel(context, 600)
       if (message.stopReason === "error" || message.stopReason === "aborted") {
         return {
           ok: false,
@@ -1005,7 +1027,6 @@ export class GithubService extends Service.create({
     }
     const diff = trimDiff(diffRes.patch, MAX_GENERATED_BODY_BYTES, 4000)
     try {
-      const { model, apiKey, headers } = await resolveSmallModel()
       const context: Context = {
         systemPrompt: PR_BODY_SYSTEM_PROMPT,
         messages: [
@@ -1021,11 +1042,7 @@ export class GithubService extends Service.create({
         ],
         tools: [],
       }
-      const message = await complete(model, context, {
-        apiKey,
-        headers,
-        maxTokens: 800,
-      })
+      const message = await completeWithSmallModel(context, 800)
       if (message.stopReason === "error" || message.stopReason === "aborted") {
         return { ok: true, body: fallback }
       }

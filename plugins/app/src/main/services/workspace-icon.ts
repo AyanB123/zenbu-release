@@ -269,7 +269,9 @@ export class WorkspaceIconService extends Service.create({
       // create racing), drop our blob and keep theirs. The other
       // one's bytes are equally good and we'd just be leaking.
       if (w.iconAuto) {
-        void this.ctx.db.client.deleteBlob(blobId).catch(() => {})
+        void this.ctx.db.client.deleteBlob(blobId).catch(err =>
+          console.warn("[workspace-icon] unreferenced icon blob cleanup failed:", err),
+        )
         return
       }
       w.iconAuto = {

@@ -21,6 +21,7 @@ const MAIN_WINDOW_ID = "main"
  * Generic stem so `WorkspaceIconService` would re-discover it too
  * (see its `STEM_SCORES`). */
 const PLAYGROUND_ICON_NAME = "icon.png"
+const EXISTING_PLAYGROUND_MAINTENANCE_DELAY_MS = 1000
 
 /** App icon location relative to the Zenbu source root. Ships in
  * production builds via the per-plugin `assets` include glob. */
@@ -142,6 +143,15 @@ function trimTransparentMargin(srcBytes: Buffer): Buffer {
   }
 }
 
+async function pathExists(target: string): Promise<boolean> {
+  try {
+    await fsp.access(target)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /**
  * Seeds the auto-created "Playground" workspace on a fresh DB:
  * materializes `~/zenbu-playground` (sample files + optional git
@@ -160,15 +170,10 @@ export class PlaygroundService extends Service.create({
       w => w.playground === true && !w.archived,
     )
     if (existing) {
-      // Re-create the folder if the user deleted it on disk, then
-      // make sure the first window still lands on the playground.
-      await this.ensureExistingPlaygroundOnDisk(existing.id)
-      // Backfill the app icon onto playgrounds created before this
-      // shipped (they're sitting on the "P" letter tile).
-      const scope = Object.values(
-        this.ctx.db.client.readRoot().app.scopes,
-      ).find(s => s.workspaceId === existing.id && !s.archived)
-      if (scope) await this.ensurePlaygroundIcon(existing.id, scope.directory)
+      // Existing-playground disk/icon repair is maintenance. Do not
+      // hold the main window open on icon reads, PNG cropping, or a
+      // recreated sample tree during every normal startup.
+      this.scheduleExistingPlaygroundMaintenance(existing.id)
       await this.pointMainWindowAtPlayground(existing.id)
       return
     }
@@ -276,6 +281,16 @@ export class PlaygroundService extends Service.create({
     workspaceId: string,
     directory: string,
   ): Promise<void> {
+    const current = this.ctx.db.client.readRoot().app.workspaces[workspaceId]
+    if (!current || current.icon) return
+    const dest = path.join(directory, PLAYGROUND_ICON_NAME)
+    if (
+      current.iconAuto?.sourcePath === PLAYGROUND_ICON_NAME &&
+      (await pathExists(dest))
+    ) {
+      return
+    }
+
     const source = resolveAppIconPath()
     if (!source) return
 
@@ -293,7 +308,6 @@ export class PlaygroundService extends Service.create({
     // 1. Drop the trimmed icon into the project folder (a separate
     //    file from the source asset). `wx` so we never clobber a
     //    real icon the user dropped in.
-    const dest = path.join(directory, PLAYGROUND_ICON_NAME)
     try {
       await fsp.writeFile(dest, bytes, { flag: "wx" })
     } catch (err) {
@@ -332,7 +346,9 @@ export class PlaygroundService extends Service.create({
       if (!w) return
       // A user uploaded an icon while we worked — keep theirs.
       if (w.icon) {
-        void this.ctx.db.client.deleteBlob(blobId).catch(() => {})
+        void this.ctx.db.client.deleteBlob(blobId).catch(err =>
+          console.warn("[playground] unreferenced icon blob cleanup failed:", err),
+        )
         return
       }
       w.iconAuto = {
@@ -345,7 +361,9 @@ export class PlaygroundService extends Service.create({
     })
     // Drop the superseded blob now that the new one is referenced.
     if (prevBlobId && prevBlobId !== blobId) {
-      void this.ctx.db.client.deleteBlob(prevBlobId).catch(() => {})
+      void this.ctx.db.client.deleteBlob(prevBlobId).catch(err =>
+        console.warn("[playground] previous icon blob cleanup failed:", err),
+      )
     }
   }
 
@@ -382,7 +400,7 @@ export class PlaygroundService extends Service.create({
     )
     if (!scope) return
     const directory = scope.directory
-    if (fs.existsSync(directory)) return // still on disk — nothing to do
+    if (await pathExists(directory)) return // still on disk — nothing to do
 
     try {
       await fsp.mkdir(directory, { recursive: true })
@@ -477,7 +495,7 @@ export class PlaygroundService extends Service.create({
     }
     const directory = path.join(home, PLAYGROUND_DIR_NAME)
     try {
-      if (fs.existsSync(directory)) {
+      if (await pathExists(directory)) {
         const stat = await fsp.stat(directory)
         if (!stat.isDirectory()) {
           console.warn(
@@ -498,6 +516,24 @@ export class PlaygroundService extends Service.create({
       )
       return null
     }
+  }
+
+  private scheduleExistingPlaygroundMaintenance(workspaceId: string): void {
+    this.setup("existing-playground-maintenance", () => {
+      const timer = setTimeout(() => {
+        void this.maintainExistingPlayground(workspaceId)
+      }, EXISTING_PLAYGROUND_MAINTENANCE_DELAY_MS)
+      timer.unref?.()
+      return () => clearTimeout(timer)
+    })
+  }
+
+  private async maintainExistingPlayground(workspaceId: string): Promise<void> {
+    await this.ensureExistingPlaygroundOnDisk(workspaceId)
+    const scope = Object.values(
+      this.ctx.db.client.readRoot().app.scopes,
+    ).find(s => s.workspaceId === workspaceId && !s.archived)
+    if (scope) await this.ensurePlaygroundIcon(workspaceId, scope.directory)
   }
 
   /**

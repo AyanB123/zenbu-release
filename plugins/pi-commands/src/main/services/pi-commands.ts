@@ -1,9 +1,6 @@
 import { Service } from "@zenbujs/core/runtime"
 import { DbService, RpcService } from "@zenbujs/core/services"
-import {
-  getAgentDir,
-  SettingsManager,
-} from "@earendil-works/pi-coding-agent"
+import type { SettingsManager } from "@earendil-works/pi-coding-agent"
 
 type WarningSettings = { anthropicExtraUsage?: boolean }
 
@@ -314,8 +311,8 @@ export class PiCommandsService extends Service.create({
     return { ok: true }
   }
 
-  getPiSettings(args: { cwd?: string | null }): { items: PiSettingItem[] } {
-    const manager = this.createSettingsManager(args.cwd)
+  async getPiSettings(args: { cwd?: string | null }): Promise<{ items: PiSettingItem[] }> {
+    const manager = await this.createSettingsManager(args.cwd)
     return { items: buildSettingsItems(manager) }
   }
 
@@ -324,13 +321,16 @@ export class PiCommandsService extends Service.create({
     id: string
     value: string
   }): Promise<{ items: PiSettingItem[] }> {
-    const manager = this.createSettingsManager(args.cwd)
+    const manager = await this.createSettingsManager(args.cwd)
     applySetting(manager, args.id, args.value)
     await manager.flush()
     return { items: buildSettingsItems(manager) }
   }
 
-  private createSettingsManager(cwd?: string | null): SettingsManager {
+  private async createSettingsManager(cwd?: string | null): Promise<SettingsManager> {
+    const { getAgentDir, SettingsManager } = await import(
+      "@earendil-works/pi-coding-agent"
+    )
     return SettingsManager.create(cwd || process.cwd(), getAgentDir())
   }
 }

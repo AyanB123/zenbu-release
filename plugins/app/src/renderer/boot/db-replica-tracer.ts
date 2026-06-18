@@ -38,6 +38,16 @@ const buckets = new Map<string, Bucket>()
 let totalEvents = 0
 let startedAt = 0
 
+export function shouldEnableDbReplicaTracer(args: {
+  dev: boolean
+  search: string
+  localStorageValue: string | null
+}): boolean {
+  if (!args.dev) return false
+  const params = new URLSearchParams(args.search)
+  return params.get("dbTrace") === "1" || args.localStorageValue === "1"
+}
+
 function bump(key: string, itemCount = 0) {
   const cur = buckets.get(key) ?? { count: 0, items: 0 }
   cur.count++
@@ -145,11 +155,11 @@ function printSummary() {
 
 export function installDbReplicaTracer(): void {
   if (typeof window === "undefined") return
-  const params = new URLSearchParams(window.location.search)
-  const enabled =
-    import.meta.env.DEV &&
-    params.get("dbTrace") !== "0" &&
-    localStorage.getItem("zenbuDbTrace") !== "0"
+  const enabled = shouldEnableDbReplicaTracer({
+    dev: import.meta.env.DEV,
+    search: window.location.search,
+    localStorageValue: localStorage.getItem("zenbuDbTrace"),
+  })
   if (!enabled) return
 
   startedAt = performance.now()

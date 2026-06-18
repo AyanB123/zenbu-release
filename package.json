@@ -5,9 +5,18 @@
   "type": "module",
   "main": "node_modules/@zenbujs/core/dist/setup-gate.mjs",
   "scripts": {
-    "dev": "zen dev",
+    "dev": "node scripts\\dev.mjs",
+    "dev:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\launch-windows.ps1 -Restart",
+    "perf:startup": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\perf\\startup-probe.ps1",
+    "debug:launch": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\launch-debug-windows.ps1 -Restart",
+    "debug:cdp": "node scripts\\debug\\cdp-eval.mjs --port 9222 --smoke",
+    "debug:mcp": "node scripts\\debug\\mcpify.mjs serve",
+    "debug:mcp:http": "node scripts\\debug\\mcpify.mjs serve-http",
+    "debug:mcp:validate": "node scripts\\debug\\mcpify.mjs validate",
     "build:source": "zen build:source",
     "build:electron": "zen build:electron",
+    "build:mac:intel": "node scripts\\build-mac-intel.mjs",
+    "build:windows": "node scripts\\build-windows.mjs",
     "publish:source": "zen publish:source",
     "link": "zen link",
     "db:generate": "zen db generate",
@@ -38,6 +47,10 @@
     "url": "git@github.com:zenbu-labs/zenbu-release.git"
   },
   "pnpm": {
+    "patchedDependencies": {
+      "@zenbujs/hmr@0.0.2": "patches/@zenbujs__hmr@0.0.2.patch",
+      "@zenbujs/core@0.4.4": "patches/@zenbujs__core@0.4.4.patch"
+    },
     "onlyBuiltDependencies": [
       "@parcel/watcher",
       "electron",

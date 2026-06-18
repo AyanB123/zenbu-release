@@ -20,6 +20,8 @@ const PLUGIN_AUTHORING_GUIDE_PATH = path.resolve(
   "plugin-authoring.md",
 )
 
+const SCAFFOLD_TIMEOUT_MS = 5 * 60 * 1000
+
 export type CreatePluginArgs = {
   /** Lowercase-hyphen plugin name. Must match `/^[a-z][a-z0-9-]*$/`. */
   name: string
@@ -219,8 +221,13 @@ export class CreatePluginService extends Service.create({
   private resolvePnpm(): string {
     try {
       const paths = getBundledPaths()
-      if (paths.pnpmPath) return paths.pnpmPath
-    } catch {}
+      if (paths.pnpmPath && fs.existsSync(paths.pnpmPath)) return paths.pnpmPath
+    } catch (err) {
+      console.warn(
+        "[create-plugin] failed to resolve bundled pnpm:",
+        err instanceof Error ? err.message : err,
+      )
+    }
     return "pnpm"
   }
 
@@ -236,6 +243,24 @@ export class CreatePluginService extends Service.create({
         env: { ...process.env, CI: "1", FORCE_COLOR: "0" },
         stdio: ["ignore", "pipe", "pipe"],
       })
+      let settled = false
+      const timeout = setTimeout(() => {
+        if (settled) return
+        settled = true
+        child.kill()
+        reject(
+          new Error(
+            `${cmd} ${cmdArgs.join(" ")} timed out after ${SCAFFOLD_TIMEOUT_MS}ms`,
+          ),
+        )
+      }, SCAFFOLD_TIMEOUT_MS)
+      timeout.unref?.()
+      const finish = (fn: () => void) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeout)
+        fn()
+      }
       const emit = this.ctx.rpc.emit.app
       const pumpLines = (stream: "stdout" | "stderr") => {
         let buffer = ""
@@ -260,14 +285,14 @@ export class CreatePluginService extends Service.create({
       }
       pumpLines("stdout")
       pumpLines("stderr")
-      child.on("error", err => reject(err))
-      child.on("exit", (code, signal) => {
+      child.on("error", err => finish(() => reject(err)))
+      child.on("close", (code, signal) => {
         if (code === 0) {
-          resolve()
+          finish(() => resolve())
         } else if (signal) {
-          reject(new Error(`${cmd} terminated by ${signal}`))
+          finish(() => reject(new Error(`${cmd} terminated by ${signal}`)))
         } else {
-          reject(new Error(`${cmd} exited with code ${code}`))
+          finish(() => reject(new Error(`${cmd} exited with code ${code}`)))
         }
       })
     })

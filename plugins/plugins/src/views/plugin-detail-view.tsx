@@ -29,6 +29,14 @@ import {
   useInstalledPlugins,
   type InstalledPluginListing,
 } from "../lib/plugin-enabled-store"
+import {
+  parsePiPackageDetailId,
+  useInstalledPiPackages,
+  usePiCatalog,
+  usePiPackageActions,
+  type PiInstalledPackage,
+  type PiPackageListing,
+} from "../lib/pi-package-store"
 
 export type PluginDetailArgs = {
   pluginId?: string
@@ -45,9 +53,13 @@ type PluginIconRecord = {
 
 export default function PluginDetailView() {
   const { pluginId } = useViewArgs<PluginDetailArgs>() ?? {}
+  const piPackageRef = parsePiPackageDetailId(pluginId)
+  const piSource = piPackageRef?.source ?? null
   const rpc = useRpc()
 
   const installed = useInstalledPlugins()
+  const installedPiPackages = useInstalledPiPackages()
+  const piCatalog = usePiCatalog()
   const icons = (useDb(root => root.app.pluginIcons) ?? {}) as Record<
     string,
     PluginIconRecord
@@ -110,7 +122,7 @@ export default function PluginDetailView() {
   // Revalidate the marketplace listing while not installed.
   const [loadError, setLoadError] = useState<string | null>(null)
   useEffect(() => {
-    if (!pluginId || match) return
+    if (!pluginId || match || piSource) return
     let cancelled = false
     setLoadError(null)
     void rpc.plugins.marketplace
@@ -126,7 +138,7 @@ export default function PluginDetailView() {
     return () => {
       cancelled = true
     }
-  }, [pluginId, match, rpc])
+  }, [pluginId, match, piSource, rpc])
 
   const [installing, setInstalling] = useState(false)
   const [installError, setInstallError] = useState<string | null>(null)
@@ -149,6 +161,23 @@ export default function PluginDetailView() {
       .catch(err =>
         console.error("[plugin-detail] openPluginInNewWindow failed:", err),
       )
+  }
+
+  if (piSource) {
+    return (
+      <PiPackageDetailPane
+        source={piSource}
+        installed={
+          installedPiPackages.find(pkg => {
+            return (
+              pkg.source === piSource &&
+              (piPackageRef.scope == null || pkg.scope === piPackageRef.scope)
+            )
+          }) ?? null
+        }
+        listing={piCatalog.find(pkg => pkg.source === piSource) ?? null}
+      />
+    )
   }
 
   if (!pluginId) {
@@ -257,6 +286,379 @@ function PiExtensionBody({ dir }: { dir: string }) {
         {dir}
       </code>
       .
+    </div>
+  )
+}
+
+function PiPackageDetailPane({
+  source,
+  installed,
+  listing,
+}: {
+  source: string
+  installed: PiInstalledPackage | null
+  listing: PiPackageListing | null
+}) {
+  const actions = usePiPackageActions()
+  const [busy, setBusy] = useState<"install" | "toggle" | "update" | "remove" | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [readme, setReadme] = useState<string | null>(null)
+  const [readmeError, setReadmeError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!installed?.installed) {
+      setReadme(null)
+      setReadmeError(null)
+      return
+    }
+    let cancelled = false
+    setReadme(null)
+    setReadmeError(null)
+    void actions
+      .readDetail(installed)
+      .then(res => {
+        if (cancelled) return
+        setReadme(res.readme ?? "")
+      })
+      .catch(err => {
+        if (!cancelled) setReadmeError(err instanceof Error ? err.message : String(err))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [actions, installed])
+
+  const run = async (kind: typeof busy, fn: () => Promise<unknown>) => {
+    if (busy) return
+    setBusy(kind)
+    setError(null)
+    try {
+      await fn()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const name = listing?.name ?? installed?.name ?? source
+  const version = listing?.version ?? installed?.version ?? null
+  const author = listing?.author ?? installed?.author ?? null
+  const tagline = listing?.description ?? installed?.description ?? null
+  const tags = listing?.tags ?? []
+
+  return (
+    <DetailLayout
+      header={
+        <DetailHeader
+          icon={<PiPackageHeaderIcon />}
+          name={name}
+          version={version}
+          author={author}
+          tagline={tagline}
+          downloadCount={listing?.downloadCount ?? null}
+          tags={tags}
+          action={
+            installed ? (
+              <PiPackageActions
+                pkg={installed}
+                busy={busy}
+                onToggle={() =>
+                  run("toggle", () => actions.setEnabled(installed, !installed.enabled))
+                }
+                onUpdate={() => run("update", () => actions.update(installed.source))}
+                onRemove={() => run("remove", () => actions.remove(installed))}
+              />
+            ) : (
+              <InstallButton
+                installing={busy === "install"}
+                installed={false}
+                onInstall={() => run("install", () => actions.install(source))}
+              />
+            )
+          }
+        />
+      }
+    >
+      {error && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12.5px] text-destructive whitespace-pre-wrap">
+          {error}
+        </div>
+      )}
+      {installed ? (
+        <PiInstalledPackageBody
+          pkg={installed}
+          readme={readme}
+          readmeError={readmeError}
+        />
+      ) : (
+        <PiPackageInstallBody listing={listing} source={source} />
+      )}
+    </DetailLayout>
+  )
+}
+
+function PiPackageActions({
+  pkg,
+  busy,
+  onToggle,
+  onUpdate,
+  onRemove,
+}: {
+  pkg: PiInstalledPackage
+  busy: string | null
+  onToggle: () => void
+  onUpdate: () => void
+  onRemove: () => void
+}) {
+  const rpc = useRpc()
+  const [open, setOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false)
+  const onCopy = () => {
+    const value = pkg.installedPath ?? pkg.source
+    void rpc.core.window.copyToClipboard(value)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1200)
+    setOpen(false)
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <Button
+        type="button"
+        variant={pkg.enabled ? "outline" : "default"}
+        onClick={onToggle}
+        disabled={busy != null || !pkg.installed}
+        aria-pressed={pkg.enabled}
+        className="h-8 w-[76px] justify-center px-3 text-[12px] font-medium"
+      >
+        {busy === "toggle" ? "Saving…" : pkg.enabled ? "Disable" : "Enable"}
+      </Button>
+      <div className="inline-flex h-8 items-stretch overflow-hidden rounded-md border border-border bg-background/40 hover:bg-background/70">
+        <button
+          type="button"
+          onClick={onUpdate}
+          disabled={busy != null || !pkg.installed}
+          className="inline-flex items-center px-3 text-[12px] font-medium leading-none text-foreground hover:bg-background/80 disabled:opacity-60"
+        >
+          {busy === "update" ? "Updating…" : "Update"}
+        </button>
+        <DropdownMenu open={open} onOpenChange={setOpen}>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label="More Pi package actions"
+              className={cn(
+                "inline-flex items-center justify-center border-l border-border px-2 text-muted-foreground",
+                "hover:bg-background/80 hover:text-foreground",
+                "data-[state=open]:bg-background/80 data-[state=open]:text-foreground",
+              )}
+            >
+              <ChevronDownIcon className="size-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[180px] p-1">
+            <DropdownMenuItem onSelect={onCopy} className="gap-2">
+              <span className="flex-1 text-[12px]">
+                {copied ? "Copied!" : pkg.installedPath ? "Copy path" : "Copy source"}
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={busy != null}
+              onSelect={() => {
+                setRemoveConfirmOpen(true)
+                setOpen(false)
+              }}
+              className="gap-2"
+            >
+              <span className="flex-1 text-[12px]">
+                {busy === "remove" ? "Uninstalling…" : "Uninstall"}
+              </span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      <Dialog open={removeConfirmOpen} onOpenChange={setRemoveConfirmOpen}>
+        <DialogContent className="sm:max-w-[460px] p-0 gap-0">
+          <DialogHeader className="px-5 pt-5 pb-3">
+            <DialogTitle className="text-[14px] font-semibold">
+              Uninstall {pkg.name}?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="px-5 pb-4 text-[13px] leading-relaxed text-muted-foreground">
+            This removes the Pi package from Pi settings and deletes its managed package files.
+          </div>
+          <DialogFooter className="px-5 py-3 border-t border-border bg-muted/30 rounded-b-xl">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={busy != null}
+              onClick={() => setRemoveConfirmOpen(false)}
+              className="h-8 text-[13px]"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={busy != null}
+              onClick={() => {
+                setRemoveConfirmOpen(false)
+                onRemove()
+              }}
+              className="h-8 text-[13px]"
+            >
+              {busy === "remove" ? "Uninstalling…" : "Uninstall"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function PiInstalledPackageBody({
+  pkg,
+  readme,
+  readmeError,
+}: {
+  pkg: PiInstalledPackage
+  readme: string | null
+  readmeError: string | null
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid gap-2 rounded-md border border-border/60 bg-card/30 p-3 text-[12.5px] text-muted-foreground">
+        <MetaLine label="Source" value={pkg.source} />
+        <MetaLine label="Scope" value={pkg.scope} />
+        <MetaLine label="State" value={!pkg.installed ? "Missing" : pkg.enabled ? "Enabled" : "Disabled"} />
+        {pkg.installedPath && <MetaLine label="Path" value={pkg.installedPath} />}
+      </div>
+      {pkg.diagnostics.length > 0 && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12.5px] text-destructive whitespace-pre-wrap">
+          {pkg.diagnostics.join("\n")}
+        </div>
+      )}
+      <PiPackageResourceSummary pkg={pkg} />
+      <ReadmeBody readme={readme} error={readmeError} />
+    </div>
+  )
+}
+
+function PiPackageInstallBody({
+  listing,
+  source,
+}: {
+  listing: PiPackageListing | null
+  source: string
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid gap-2 rounded-md border border-border/60 bg-card/30 p-3 text-[12.5px] text-muted-foreground">
+        <MetaLine label="Source" value={source} />
+        {listing?.installCommand && <MetaLine label="Command" value={listing.installCommand} />}
+        {listing?.repositoryUrl && <MetaLine label="Repository" value={listing.repositoryUrl} />}
+        {listing?.npmUrl && <MetaLine label="npm" value={listing.npmUrl} />}
+      </div>
+      <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12.5px] leading-relaxed text-foreground/90">
+        Pi packages can contribute executable extensions and prompt context. Review the package source before installing.
+      </div>
+      {listing?.name === "pi-subagents" && <PiSubagentsSummary />}
+    </div>
+  )
+}
+
+function PiPackageResourceSummary({ pkg }: { pkg: PiInstalledPackage }) {
+  const sections: Array<{ key: keyof PiInstalledPackage["resources"]; label: string }> = [
+    { key: "extensions", label: "Extensions" },
+    { key: "skills", label: "Skills" },
+    { key: "prompts", label: "Prompts" },
+    { key: "themes", label: "Themes" },
+  ]
+  return (
+    <div className="overflow-hidden rounded-md border border-border/60 bg-background">
+      <div className="border-b border-border/60 px-3 py-2 text-[12.5px] font-semibold">
+        Pi resources
+      </div>
+      <div className="divide-y divide-border/60">
+        {sections.map(section => {
+          const resources = pkg.resources[section.key]
+          return (
+            <div key={section.key} className="px-3 py-2">
+              <div className="mb-1 flex items-center justify-between text-[12px] font-medium text-foreground">
+                <span>{section.label}</span>
+                <span className="text-muted-foreground tabular-nums">
+                  {resources.filter(r => r.enabled).length}/{resources.length}
+                </span>
+              </div>
+              {resources.length === 0 ? (
+                <div className="text-[12px] text-muted-foreground">None</div>
+              ) : (
+                <ul className="flex flex-col gap-1">
+                  {resources.map(resource => (
+                    <li
+                      key={resource.path}
+                      className="flex min-w-0 items-center gap-2 text-[12px] text-muted-foreground"
+                    >
+                      <span
+                        className={cn(
+                          "h-1.5 w-1.5 shrink-0 rounded-full",
+                          resource.enabled ? "bg-emerald-500" : "bg-muted-foreground/35",
+                        )}
+                      />
+                      <code className="min-w-0 truncate rounded bg-muted px-1 py-0.5 text-[11px]">
+                        {resource.path}
+                      </code>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function PiSubagentsSummary() {
+  return (
+    <div className="overflow-hidden rounded-md border border-border/60 bg-background">
+      <div className="border-b border-border/60 px-3 py-2 text-[12.5px] font-semibold">
+        pi-subagents
+      </div>
+      <div className="grid gap-3 px-3 py-3 text-[12.5px] text-muted-foreground">
+        <MetaLine label="Agents" value="scout, researcher, planner, worker, reviewer, oracle" />
+        <MetaLine label="Commands" value="/run, /chain, /parallel, /run-chain, /subagents-doctor" />
+        <MetaLine label="Prompts" value="parallel-review, review-loop, parallel-research, parallel-context-build" />
+      </div>
+    </div>
+  )
+}
+
+function MetaLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid min-w-0 grid-cols-[92px_minmax(0,1fr)] gap-2">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="min-w-0 break-words text-foreground/90">{value}</span>
+    </div>
+  )
+}
+
+function PiPackageHeaderIcon() {
+  return (
+    <div
+      className={cn(
+        "grid h-14 w-14 place-items-center rounded-md",
+        "border border-border/60 bg-card/40 text-muted-foreground",
+      )}
+      aria-hidden
+    >
+      <PiGlyph />
     </div>
   )
 }

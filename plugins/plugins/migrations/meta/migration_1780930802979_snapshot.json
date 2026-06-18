@@ -1,0 +1,40 @@
+{
+  "id": "d2190750-1b8e-407e-a157-35152f52c1a4",
+  "prevId": "304b7d39-fd77-4301-9b4f-1d374fc2bdb0",
+  "fields": {
+    "enabled": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "8c885966023f36f6",
+      "default": false
+    },
+    "catalog": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "6ea5a0f601089e11",
+      "default": {}
+    },
+    "feed": {
+      "kind": "collection",
+      "debugName": "marketplace-feed"
+    },
+    "piCatalog": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "0b273954b75577d2",
+      "default": {}
+    },
+    "piInstalled": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "9bf7a1c3b6a57cd6",
+      "default": {}
+    },
+    "piDisabledFilterBackups": {
+      "kind": "data",
+      "hasDefault": true,
+      "typeHash": "94382e43c908c68d",
+      "default": {}
+    }
+  }
+}

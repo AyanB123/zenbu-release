@@ -106,11 +106,15 @@ export class SidebarViewShortcutsService extends Service.create({
                 },
                 args: { viewType: entry.name, kind },
               })
-              .catch(() => {})
+              .catch(err =>
+                console.warn("[sidebar-view-shortcuts] palette register failed:", err),
+              )
             unsubs.push(() => {
               void this.ctx.paletteActions
                 .unregister({ id: paletteId })
-                .catch(() => {})
+                .catch(err =>
+                  console.warn("[sidebar-view-shortcuts] palette unregister failed:", err),
+                )
             })
           }
         }
@@ -127,7 +131,9 @@ export class SidebarViewShortcutsService extends Service.create({
         for (const u of unsubs) {
           try {
             u()
-          } catch {}
+          } catch (err) {
+            console.warn("[sidebar-view-shortcuts] disposer failed:", err)
+          }
         }
         unsubs = []
       }

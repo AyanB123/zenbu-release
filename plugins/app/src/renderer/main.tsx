@@ -22,8 +22,6 @@ import { IconFallback } from "./boot/icon-fallback";
 import { markBoot } from "./boot/boot-trace";
 import { installReactScanWhenRequested } from "./boot/react-scan";
 import { initTheme } from "./lib/theme";
-import { scan } from "react-scan";
-// scan({ showToolbar: true, enabled: false });
 
 // allotment's CSS is `@import`-ed from main.css so Tailwind only runs
 // its compiler+scanner setup once for the entire entry instead of
@@ -47,5 +45,4 @@ createRoot(document.getElementById("root")!).render(
   </ZenbuProvider>,
 );
 markBoot("after-render-call");
-// 
-// installReactScanWhenRequested();
+installReactScanWhenRequested();

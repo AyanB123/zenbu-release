@@ -1,6 +1,8 @@
 import { BrowserWindow, Menu, type MenuItemConstructorOptions } from "electron"
 import { Service } from "@zenbujs/core/runtime"
 
+const CONTEXT_MENU_TIMEOUT_MS = 30_000
+
 export type ContextMenuItem =
   | { type: "separator" }
   | {
@@ -21,6 +23,7 @@ export class ContextMenuService extends Service.create({ key: "contextMenu" }) {
     const window = BrowserWindow.getFocusedWindow() ?? undefined
     return new Promise(resolve => {
       let chosen: string | null = null
+      let settled = false
       const template: MenuItemConstructorOptions[] = args.items.map(item => {
         if (item.type === "separator") return { type: "separator" }
         return {
@@ -36,8 +39,26 @@ export class ContextMenuService extends Service.create({ key: "contextMenu" }) {
         }
       })
       const menu = Menu.buildFromTemplate(template)
+      const finish = () => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeout)
+        resolve({ chosenId: chosen })
+      }
+      const timeout = setTimeout(() => {
+        try {
+          menu.closePopup(window)
+        } catch (err) {
+          console.warn(
+            "[context-menu] failed to close timed-out popup:",
+            err instanceof Error ? err.message : err,
+          )
+        }
+        finish()
+      }, CONTEXT_MENU_TIMEOUT_MS)
+      timeout.unref?.()
       const popupOptions: Electron.PopupOptions = {
-        callback: () => resolve({ chosenId: chosen }),
+        callback: finish,
       }
       if (window) popupOptions.window = window
       if (args.x != null) popupOptions.x = Math.round(args.x)

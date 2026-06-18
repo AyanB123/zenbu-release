@@ -648,14 +648,15 @@ export async function deleteSession(args: {
   sessionId: string
 }): Promise<void> {
   const { svc, sessionId } = args
-  const live = svc.live.get(sessionId)
-  if (live) {
-    live.dispose()
-    svc.live.delete(sessionId)
-  }
+  svc.disposeLiveSession(sessionId, "delete-session")
   await svc.ctx.db.client.app.sessions[sessionId].eventLog
     .delete()
-    .catch(() => {})
+    .catch(err =>
+      console.warn(
+        `[sessions] failed to delete event log for ${sessionId}:`,
+        err instanceof Error ? err.message : err,
+      ),
+    )
   await svc.ctx.db.client.update(root => {
     delete root.app.sessions[sessionId]
   })

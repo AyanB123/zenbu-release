@@ -3,11 +3,20 @@ import { nanoid } from "nanoid"
 
 import { Service } from "@zenbujs/core/runtime"
 import { DbService } from "@zenbujs/core/services"
-import {
-  AuthStorage,
-  ModelRegistry,
-} from "@earendil-works/pi-coding-agent"
 import type { OAuthLoginCallbacks } from "@earendil-works/pi-ai"
+import type {
+  AuthStorage as PiAuthStorage,
+  ModelRegistry as PiModelRegistry,
+} from "@earendil-works/pi-coding-agent"
+
+type PiCodingAgentAuthModule = typeof import("@earendil-works/pi-coding-agent")
+
+let piCodingAgentAuthPromise: Promise<PiCodingAgentAuthModule> | null = null
+
+function loadPiCodingAgentAuth(): Promise<PiCodingAgentAuthModule> {
+  piCodingAgentAuthPromise ??= import("@earendil-works/pi-coding-agent")
+  return piCodingAgentAuthPromise
+}
 
 // ---------------------------------------------------------------------------
 // AuthService
@@ -295,29 +304,52 @@ export class AuthService extends Service.create({
   key: "auth",
   deps: { db: DbService },
 }) {
+  private storageInstance: PiAuthStorage | null = null
+  private registryInstance: PiModelRegistry | null = null
+  private readyPromise: Promise<void> | null = null
+
   /** Pi's credential store, backed by `~/.pi/agent/auth.json`. */
-  readonly storage = AuthStorage.create()
+  get storage(): PiAuthStorage {
+    if (!this.storageInstance) {
+      throw new Error("AuthService storage was read before auth initialized")
+    }
+    return this.storageInstance
+  }
+
   /**
    * Pi's model registry. Reads `~/.pi/agent/models.json` for custom
    * providers; resolves keys through `storage`. Other services
    * (`SessionsService`) pull this directly to pass into
    * `createAgentSession`.
    */
-  readonly registry = ModelRegistry.create(this.storage)
+  get registry(): PiModelRegistry {
+    if (!this.registryInstance) {
+      throw new Error("AuthService registry was read before auth initialized")
+    }
+    return this.registryInstance
+  }
+
+  ready(): Promise<void> {
+    return this.ensureAuthReady()
+  }
+
+  private ensureAuthReady(): Promise<void> {
+    this.readyPromise ??= this.initializeAuth()
+    return this.readyPromise
+  }
+
+  private async initializeAuth(): Promise<void> {
+    if (this.storageInstance && this.registryInstance) return
+    const { AuthStorage, ModelRegistry } = await loadPiCodingAgentAuth()
+    const storage = AuthStorage.create()
+    this.storageInstance = storage
+    this.registryInstance = ModelRegistry.create(storage)
+  }
 
   /** In-flight flow, or null when idle. */
   private flow: FlowController | null = null
 
   async evaluate() {
-    // Surface any deferred errors pi's auth layer accumulated
-    // during boot (e.g. malformed `auth.json`). They go to the
-    // main-process console; the renderer surfaces "not configured"
-    // as a normal state.
-    for (const err of this.storage.drainErrors()) {
-      console.error("[auth] storage error:", err)
-    }
-    await this.publishStatuses()
-
     this.setup("clear-flow-on-dispose", () => () => {
       if (this.flow) {
         this.flow.abortController.abort()
@@ -345,6 +377,16 @@ export class AuthService extends Service.create({
    * lockstep with the model picker.
    */
   async publishStatuses(): Promise<void> {
+    await this.ensureAuthReady()
+
+    // Surface any deferred errors pi's auth layer accumulated
+    // during boot (e.g. malformed `auth.json`). They go to the
+    // main-process console; the renderer surfaces "not configured"
+    // as a normal state.
+    for (const err of this.storage.drainErrors()) {
+      console.error("[auth] storage error:", err)
+    }
+
     // Refresh the registry so models.json changes (and any
     // models.json-backed API keys) take effect on next read.
     this.registry.refresh()
@@ -490,6 +532,7 @@ export class AuthService extends Service.create({
    * disconnect affordance.
    */
   async setApiKey(args: { providerId: string; key: string }): Promise<void> {
+    await this.ensureAuthReady()
     const trimmed = args.key.trim()
     if (!trimmed) {
       this.storage.remove(args.providerId)
@@ -505,6 +548,7 @@ export class AuthService extends Service.create({
    * remain — they're not ours to remove.
    */
   async removeAuth(args: { providerId: string }): Promise<void> {
+    await this.ensureAuthReady()
     this.storage.remove(args.providerId)
     await this.publishStatuses()
   }
@@ -523,6 +567,8 @@ export class AuthService extends Service.create({
   async startOAuthLogin(args: {
     providerId: string
   }): Promise<{ flowId: string }> {
+    await this.ensureAuthReady()
+
     // Cancel any existing flow first — only one at a time.
     if (this.flow) {
       this.flow.abortController.abort()

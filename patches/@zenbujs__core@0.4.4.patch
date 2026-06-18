@@ -1,0 +1,1580 @@
+diff --git a/dist/db-CQTfJMLv.mjs b/dist/db-CQTfJMLv.mjs
+index fcc8079..29ee794 100644
+--- a/dist/db-CQTfJMLv.mjs
++++ b/dist/db-CQTfJMLv.mjs
+@@ -1259,7 +1259,7 @@ var DbService = class extends Service.create({
+ 									return;
+ 								}
+ 							}
+-						});
++						}, process.platform === "win32" ? { backend: "windows" } : undefined);
+ 						if (closed) {
+ 							await sub.unsubscribe().catch(() => {});
+ 							return;
+diff --git a/dist/dev-BsGaKfbp.mjs b/dist/dev-BsGaKfbp.mjs
+index 0272585..a3c4671 100644
+--- a/dist/dev-BsGaKfbp.mjs
++++ b/dist/dev-BsGaKfbp.mjs
+@@ -68,7 +68,7 @@ async function startLinkWatcher(projectDir, opts = {}) {
+ 				if (err) return;
+ 				if (!eventsAreRelevant(events, target)) return;
+ 				scheduleRelink();
+-			}, { ignore: COMMON_IGNORES });
++			}, { ignore: COMMON_IGNORES, ...(process.platform === "win32" ? { backend: "windows" } : {}) });
+ 			if (closed) {
+ 				await sub.unsubscribe().catch(() => {});
+ 				return;
+@@ -252,7 +252,7 @@ function parseArgs(argv) {
+ 	};
+ }
+ function resolveLocalElectron(projectDir) {
+-	const candidates = [path.join(projectDir, "node_modules", "electron", "dist", "Electron.app", "Contents", "MacOS", "Electron"), path.join(projectDir, "node_modules", ".bin", "electron")];
++	const candidates = [path.join(projectDir, "node_modules", "electron", "dist", "electron.exe"), path.join(projectDir, "node_modules", "electron", "dist", "Electron.app", "Contents", "MacOS", "Electron"), path.join(projectDir, "node_modules", ".bin", process.platform === "win32" ? "electron.cmd" : "electron"), path.join(projectDir, "node_modules", ".bin", "electron")];
+ 	for (const candidate of candidates) if (existsSync(candidate)) return candidate;
+ 	throw new Error(`Electron is not installed in ${projectDir}. Run \`pnpm install\` in the app.`);
+ }
+@@ -274,9 +274,12 @@ async function runDev(argv) {
+ 	const electronArgs = [projectDir, `--project=${projectDir}`];
+ 	const cdpPort = process.env.ZENBU_CDP_PORT;
+ 	if (cdpPort) electronArgs.push(`--remote-debugging-port=${cdpPort}`);
++	const electronEnv = { ...process.env };
++	delete electronEnv.ELECTRON_RUN_AS_NODE;
+ 	if (detach) {
+ 		spawn(electron, electronArgs, {
+ 			cwd: projectDir,
++			env: electronEnv,
+ 			detached: true,
+ 			stdio: "ignore"
+ 		}).unref();
+@@ -284,6 +287,7 @@ async function runDev(argv) {
+ 	}
+ 	const child = spawn(electron, electronArgs, {
+ 		cwd: projectDir,
++		env: electronEnv,
+ 		stdio: "inherit"
+ 	});
+ 	process.on("SIGINT", () => child.kill("SIGINT"));
+diff --git a/dist/env-bootstrap.mjs b/dist/env-bootstrap.mjs
+index 9adf446..4df3140 100644
+--- a/dist/env-bootstrap.mjs
++++ b/dist/env-bootstrap.mjs
+@@ -9,6 +9,9 @@ function userCacheRoot() {
+ 	if (process.platform === "win32") return process.env.LOCALAPPDATA ?? path.join(os.homedir(), "AppData", "Local");
+ 	return process.env.XDG_CACHE_HOME ?? path.join(os.homedir(), ".cache");
+ }
++function toolName(name) {
++	return process.platform === "win32" ? `${name}.exe` : name;
++}
+ function computePaths() {
+ 	const cacheRoot = path.join(userCacheRoot(), "Zenbu");
+ 	const binDir = path.join(cacheRoot, "bin");
+@@ -16,10 +19,10 @@ function computePaths() {
+ 		cacheRoot,
+ 		binDir,
+ 		bunInstall: path.join(cacheRoot, "bun"),
+-		bunPath: path.join(binDir, "bun"),
++		bunPath: path.join(binDir, toolName("bun")),
+ 		pnpmHome: path.join(cacheRoot, "pnpm"),
+-		pnpmPath: path.join(binDir, "pnpm"),
+-		gitPath: path.join(binDir, "git"),
++		pnpmPath: path.join(binDir, toolName("pnpm")),
++		gitPath: path.join(binDir, toolName("git")),
+ 		writtenAt: Date.now()
+ 	};
+ }
+diff --git a/dist/launcher.mjs b/dist/launcher.mjs
+index 42bb6a0..2b88720 100644
+--- a/dist/launcher.mjs
++++ b/dist/launcher.mjs
+@@ -4,6 +4,7 @@ import fs, { existsSync } from "node:fs";
+ import fsp from "node:fs/promises";
+ import os from "node:os";
+ import path from "node:path";
++import { pathToFileURL } from "node:url";
+ import crypto$1 from "node:crypto";
+ import { spawn } from "node:child_process";
+ //#region \0rolldown/runtime.js
+@@ -18547,7 +18548,8 @@ function isYarnBerry(version) {
+ 	return Number.isFinite(major) && major >= 2;
+ }
+ function bundledToolPath(name, resourcesPath) {
+-	const candidates = [path.join(resourcesPath, "toolchain", "bin", name), path.join(resourcesPath, "toolchain", name)];
++	const names = process.platform === "win32" ? [`${name}.exe`, name] : [name];
++	const candidates = names.flatMap((candidateName) => [path.join(resourcesPath, "toolchain", "bin", candidateName), path.join(resourcesPath, "toolchain", candidateName)]);
+ 	for (const candidate of candidates) if (existsSync(candidate)) return candidate;
+ 	return null;
+ }
+@@ -18619,9 +18621,14 @@ function buildInstallEnv(appsDir, resourcesPath) {
+ 	segments.push(...systemDirs);
+ 	const seen = /* @__PURE__ */ new Set();
+ 	const PATH = segments.filter((s) => s && !seen.has(s) && seen.add(s)).join(sep);
++	const isolatedNpmUserConfig = process.platform === "win32" ? path.join(appsDir, ".zenbu", ".npmrc") : null;
+ 	return {
+ 		...process.env,
+ 		PATH,
++		...(isolatedNpmUserConfig ? {
++			npm_config_userconfig: isolatedNpmUserConfig,
++			NPM_CONFIG_USERCONFIG: isolatedNpmUserConfig
++		} : {}),
+ 		Path: PATH,
+ 		CI: "true",
+ 		HOME: path.join(appsDir, ".zenbu", ".node-gyp"),
+@@ -18692,10 +18699,10 @@ async function runInstall(opts) {
+ 	switch (pm.type) {
+ 		case "pnpm": {
+ 			if (entry.kind !== "js") throw new Error("internal: pnpm entry shape");
+-			const bun = bundledToolPath("bun", resourcesPath);
+-			if (!bun) throw new Error(`bundled bun not found in ${resourcesPath}/toolchain (required to host the pnpm.cjs entry)`);
++			const jsRuntime = bundledToolPath("node", resourcesPath) ?? bundledToolPath("bun", resourcesPath);
++			if (!jsRuntime) throw new Error(`bundled node/bun not found in ${resourcesPath}/toolchain (required to host the pnpm.cjs entry)`);
+ 			await spawnInstall({
+-				bin: bun,
++				bin: jsRuntime,
+ 				cliArgs: [
+ 					entry.path,
+ 					"install",
+@@ -18712,10 +18719,10 @@ async function runInstall(opts) {
+ 		}
+ 		case "npm": {
+ 			if (entry.kind !== "js") throw new Error("internal: npm entry shape");
+-			const bun = bundledToolPath("bun", resourcesPath);
+-			if (!bun) throw new Error(`bundled bun not found in ${resourcesPath}/toolchain (required to host the npm-cli.js entry)`);
++			const jsRuntime = bundledToolPath("node", resourcesPath) ?? bundledToolPath("bun", resourcesPath);
++			if (!jsRuntime) throw new Error(`bundled node/bun not found in ${resourcesPath}/toolchain (required to host the npm-cli.js entry)`);
+ 			await spawnInstall({
+-				bin: bun,
++				bin: jsRuntime,
+ 				cliArgs: [
+ 					entry.path,
+ 					"install",
+@@ -18734,10 +18741,10 @@ async function runInstall(opts) {
+ 		}
+ 		case "yarn": {
+ 			if (entry.kind !== "js") throw new Error("internal: yarn entry shape");
+-			const bun = bundledToolPath("bun", resourcesPath);
+-			if (!bun) throw new Error(`bundled bun not found in ${resourcesPath}/toolchain (required to host the yarn.js entry)`);
++			const jsRuntime = bundledToolPath("node", resourcesPath) ?? bundledToolPath("bun", resourcesPath);
++			if (!jsRuntime) throw new Error(`bundled node/bun not found in ${resourcesPath}/toolchain (required to host the yarn.js entry)`);
+ 			if (isYarnBerry(pm.version)) await spawnInstall({
+-				bin: bun,
++				bin: jsRuntime,
+ 				cliArgs: [entry.path, "install"],
+ 				cwd: appsDir,
+ 				env: {
+@@ -18754,7 +18761,7 @@ async function runInstall(opts) {
+ 				await fsp.mkdir(path.dirname(rcPath), { recursive: true });
+ 				await fsp.writeFile(rcPath, "strict-ssl false\n");
+ 				await spawnInstall({
+-					bin: bun,
++					bin: jsRuntime,
+ 					cliArgs: [
+ 						entry.path,
+ 						"install",
+@@ -20607,7 +20614,9 @@ async function maybeOpenInstallingWindow(cfg) {
+ 		pending.length = 0;
+ 		ready = true;
+ 	});
+-	view.webContents.loadFile(htmlPath).catch((err) => {
++	const installingHtml = fs.readFileSync(htmlPath, "utf8");
++	const installingHtmlUrl = `data:text/html;charset=utf-8,${encodeURIComponent(installingHtml)}`;
++	view.webContents.loadURL(installingHtmlUrl, { baseURLForDataURL: pathToFileURL(RESOURCES_PATH + path.sep).href }).catch((err) => {
+ 		_logStream.write(`[installer] loadFile failed: ${err.message ?? err}\n`);
+ 	});
+ 	const emit = (event, payload) => {
+@@ -20825,7 +20834,7 @@ async function handoff(appsDir) {
+ 	if (!existsSync(entry)) throw new Error(`[launcher] expected entry not found: ${entry}. The cloned source may be missing @zenbujs/core in its dependencies.`);
+ 	if (!process.argv.some((arg) => arg.startsWith("--project="))) process.argv.push(`--project=${appsDir}`);
+ 	process.env.ZENBU_LAUNCHED_FROM_BUNDLE = "1";
+-	await import(entry);
++	await import(pathToFileURL(entry).href);
+ }
+ async function main() {
+ 	await app.whenReady();
+diff --git a/dist/loaders/zenbu.mjs b/dist/loaders/zenbu.mjs
+index b96a1dc..a29eb29 100644
+--- a/dist/loaders/zenbu.mjs
++++ b/dist/loaders/zenbu.mjs
+@@ -1,397 +1,477 @@
+-import { stripTypeScriptTypes } from "node:module";
+-import fs from "node:fs";
+-import path from "node:path";
+-import { fileURLToPath, pathToFileURL } from "node:url";
+-import { execFileSync } from "node:child_process";
+-//#region src/loaders/zenbu.ts
+-const verbose = process.env.ZENBU_VERBOSE === "1";
+-const nativeTsLoader = process.env.ZENBU_NATIVE_TS_LOADER !== "0";
+-const loaderName = "zenbu-loader";
+-let tracePort = null;
+-const stats = {
+-	resolveCount: 0,
+-	resolveMs: 0,
+-	loadCount: 0,
+-	loadMs: 0
+-};
+-let resolvedPayload = null;
+-let resolvedPluginSourceFiles = [];
+-/**
+-* Set of absolute service file paths derived from the resolved payload.
+-* Used by the `file://` branch in `load()` to decide which user files
+-* should have `runtime.register(...)` auto-injected. Refreshed alongside
+-* `resolvedPayload` whenever the loader picks up a new config snapshot.
+-*/
+-let serviceFileSet = /* @__PURE__ */ new Set();
+-let pluginDirSet = /* @__PURE__ */ new Set();
+-/**
+-* Number of times we've materialized the plugin root since boot.
+-*/
+-let pluginsRootInvocations = 0;
+-function initialize(data) {
+-	if (data?.payload) {
+-		resolvedPayload = data.payload;
+-		resolvedPluginSourceFiles = data.pluginSourceFiles ?? [];
+-		serviceFileSet = collectServiceFiles(data.payload);
+-		pluginDirSet = new Set(data.payload.plugins.map((p) => p.dir));
+-	}
+-	if (data?.tracePort) {
+-		tracePort = data.tracePort;
+-		tracePort.on("message", (msg) => {
+-			if (msg !== "flush") return;
+-			try {
+-				tracePort?.postMessage({
+-					name: loaderName,
+-					...stats
+-				});
+-			} catch {}
+-			stats.resolveCount = 0;
+-			stats.resolveMs = 0;
+-			stats.loadCount = 0;
+-			stats.loadMs = 0;
+-		});
+-		tracePort.unref?.();
+-	}
+-}
+-function globRegex(filePattern) {
+-	return new RegExp(`^${filePattern.replace(/\./g, "\\.").replace(/\*/g, ".*")}$`);
+-}
+-function expandGlob(pattern) {
+-	const dir = path.dirname(pattern);
+-	const regex = globRegex(path.basename(pattern));
+-	if (!fs.existsSync(dir)) return [];
+-	return fs.readdirSync(dir).filter((file) => regex.test(file)).map((file) => path.resolve(dir, file));
+-}
+-function buildSource(imports) {
+-	return imports.map((specifier) => `import ${JSON.stringify(specifier)}\n`).join("");
+-}
+-/**
+-* Matches a service class declaration after dynohot has stripped `export` and
+-* minified the source, so it can't require `export`. (`zen link` runs on
+-* pre-dynohot source and keeps the `export` requirement separately.)
+-*/
+-const SERVICE_CLASS_RE = /\bclass\s+(\w+)\s+extends\s+Service\.create\s*\(/g;
+-/** Decode the loader's `source` payload (string/Buffer/ArrayBuffer/TypedArray) to UTF-8. */
+-function decodeSource(source) {
+-	if (typeof source === "string") return source;
+-	if (source instanceof Uint8Array) return Buffer.from(source).toString("utf8");
+-	if (source instanceof ArrayBuffer) return Buffer.from(source).toString("utf8");
+-	return String(source);
+-}
+-/**
+-* Tail-append `runtime.register(<Class>, import.meta)` so service files don't
+-* carry the boilerplate. Idempotent if `runtime.register(` is already present;
+-* errors on multiple classes since HMR allows one service per import.meta.
+-*/
+-function appendAutoRegister(downstream, filePath) {
+-	if (!downstream || typeof downstream !== "object") return downstream;
+-	const result = downstream;
+-	if (result.format !== "module") return downstream;
+-	if (result.source == null) return downstream;
+-	const source = decodeSource(result.source);
+-	if (/\bruntime\s*\.\s*register\s*\(/.test(source)) return {
+-		...result,
+-		source
+-	};
+-	SERVICE_CLASS_RE.lastIndex = 0;
+-	const matches = [...source.matchAll(SERVICE_CLASS_RE)];
+-	if (matches.length === 0) return {
+-		...result,
+-		source
+-	};
+-	if (matches.length > 1) {
+-		const names = matches.map((m) => m[1]).join(", ");
+-		throw new Error(`[zenbu-loader] auto-register: ${matches.length} service classes (${names}) in ${filePath}.\n         The HMR model is one service per file; split into separate files.`);
+-	}
+-	const tail = `\n;import { runtime as __zenbu_runtime__ } from "@zenbujs/core/runtime";\n__zenbu_runtime__.register(${matches[0][1]}, import.meta);\n`;
+-	return {
+-		...result,
+-		source: source + tail
+-	};
+-}
+-/**
+-* Expand each plugin's `services` glob list into a flat set of absolute
+-* file paths. Consulted by the `file://` branch in `load()` to decide
+-* whether to auto-inject `runtime.register(...)` for the loaded module.
+-*
+-* Glob expansion uses the same `expandGlob` (and therefore the same
+-* `fs.readdirSync` snapshot) that `buildPluginBarrel` uses, so the set
+-* stays in lockstep with what the barrel actually imports.
+-*/
+-function collectServiceFiles(payload) {
+-	const set = /* @__PURE__ */ new Set();
+-	for (const plugin of payload.plugins) for (const entry of plugin.services) {
+-		const resolved = path.isAbsolute(entry) ? entry : path.resolve(plugin.dir, entry);
+-		if (resolved.includes("*")) for (const f of expandGlob(resolved)) set.add(f);
+-		else set.add(resolved);
+-	}
+-	return set;
+-}
+-function isInsidePluginDir(filePath) {
+-	const normalized = path.resolve(filePath);
+-	for (const dir of pluginDirSet) {
+-		const root = path.resolve(dir);
+-		if (normalized === root || normalized.startsWith(root + path.sep)) return true;
+-	}
+-	return false;
+-}
+-function loadNativeStrippedTs(filePath) {
+-	return {
+-		format: "module",
+-		source: stripTypeScriptTypes(fs.readFileSync(filePath, "utf8"), {
+-			mode: "transform",
+-			sourceMap: false
+-		}),
+-		shortCircuit: true
+-	};
+-}
+-/**
+-* Re-resolve the config in a subprocess. We can't `import()` it from inside
+-* `load()`: Node serializes load hooks, so a dynamic import re-enters the
+-* loader chain and deadlocks.
+-*/
+-function resolveConfigViaSubprocess(projectDir) {
+-	const here = path.dirname(fileURLToPath(import.meta.url));
+-	const candidates = [path.resolve(here, "..", "cli", "resolve-config.mjs"), path.resolve(here, "..", "..", "dist", "cli", "resolve-config.mjs")];
+-	const resolverScript = candidates.find((c) => fs.existsSync(c));
+-	if (!resolverScript) throw new Error(`[zenbu-loader] resolve-config.mjs not found (looked in: ${candidates.join(", ")})`);
+-	const env = {
+-		...process.env,
+-		ELECTRON_RUN_AS_NODE: "1"
+-	};
+-	const out = execFileSync(process.execPath, [resolverScript, projectDir], {
+-		encoding: "utf8",
+-		timeout: 1e3,
+-		env,
+-		stdio: [
+-			"ignore",
+-			"pipe",
+-			"inherit"
+-		]
+-	});
+-	return JSON.parse(out);
+-}
+-function getResolvedConfig(configPath) {
+-	if (pluginsRootInvocations === 0) {
+-		pluginsRootInvocations += 1;
+-		if (!resolvedPayload) throw new Error("[zenbu-loader] zenbu config not resolved before loader registration. setup-gate must pass it via register(specifier, { data: { payload, pluginSourceFiles } }).");
+-		return {
+-			payload: resolvedPayload,
+-			pluginSourceFiles: resolvedPluginSourceFiles
+-		};
+-	}
+-	pluginsRootInvocations += 1;
+-	const fresh = resolveConfigViaSubprocess(path.dirname(configPath));
+-	resolvedPayload = fresh.payload;
+-	resolvedPluginSourceFiles = fresh.pluginSourceFiles;
+-	serviceFileSet = collectServiceFiles(fresh.payload);
+-	pluginDirSet = new Set(fresh.payload.plugins.map((p) => p.dir));
+-	return fresh;
+-}
+-/**
+-* Generate the top-level plugins barrel. The first import is the registry
+-* setup module; ESM evaluates left-to-right in import order, so by the time
+-* the plugin barrels start importing service files, `replacePlugins(...)` and
+-* `registerAppEntrypoint(...)` have already populated the runtime registry.
+-*/
+-function buildPluginsRoot(payload) {
+-	const registryUrl = `zenbu:registry?data=${encodeURIComponent(JSON.stringify(payload))}`;
+-	const barrelUrls = payload.plugins.map((p) => `zenbu:barrel?plugin=${encodeURIComponent(JSON.stringify(p))}`);
+-	return {
+-		source: `${buildSource([registryUrl, ...barrelUrls])}import.meta.hot?.accept()\n`,
+-		barrelUrls
+-	};
+-}
+-/**
+-* Generate the registry-setup module body. Side-effect only — no exports.
+-* Imported FIRST by the plugins root so its `replacePlugins` /
+-* `registerAppEntrypoint` calls run before any plugin's service files
+-* evaluate.
+-*/
+-function buildRegistryModule(payload) {
+-	return [
+-		"import { replacePlugins, registerAppEntrypoint } from \"@zenbujs/core/runtime\"",
+-		`replacePlugins(${JSON.stringify(payload.plugins)})`,
+-		`registerAppEntrypoint(${JSON.stringify(payload.appEntrypoint)}, ${JSON.stringify(payload.splashPath)})`,
+-		"import.meta.hot?.accept()"
+-	].join("\n") + "\n";
+-}
+-/**
+-* Generate a per-plugin barrel: just service-file imports anchored at the
+-* plugin's `dir`. Glob-form entries get expanded via `fs.readdirSync` and
+-* glob directories are registered with `context.hot.watch()` so dynohot
+-* reloads the generated barrel when service files are added/removed.
+-*/
+-function buildPluginBarrel(plugin) {
+-	const imports = [];
+-	const watchPaths = new Set([plugin.dir]);
+-	for (const entry of plugin.services) {
+-		const resolved = path.isAbsolute(entry) ? entry : path.resolve(plugin.dir, entry);
+-		if (resolved.includes("*")) {
+-			const dir = path.dirname(resolved);
+-			watchPaths.add(dir);
+-			for (const file of expandGlob(resolved)) {
+-				imports.push(pathToFileURL(file).href);
+-				serviceFileSet.add(file);
+-			}
+-		} else {
+-			imports.push(pathToFileURL(resolved).href);
+-			serviceFileSet.add(resolved);
+-		}
+-	}
+-	return {
+-		source: `${buildSource(imports)}import.meta.hot?.accept()\n`,
+-		watchPaths
+-	};
+-}
+-const CORE_PACKAGE_ROOT_FOR_LOADER = (() => {
+-	const here = path.dirname(fileURLToPath(import.meta.url));
+-	let dir = path.resolve(here, "..", "..");
+-	while (dir !== path.dirname(dir)) {
+-		const pkg = path.join(dir, "package.json");
+-		if (fs.existsSync(pkg)) try {
+-			if (JSON.parse(fs.readFileSync(pkg, "utf8")).name === "@zenbujs/core") return dir;
+-		} catch {}
+-		dir = path.dirname(dir);
+-	}
+-	return path.resolve(here, "..", "..");
+-})();
+-let coreExportsCache = null;
+-function getCoreExports() {
+-	if (coreExportsCache) return coreExportsCache;
+-	try {
+-		const pkgPath = path.join(CORE_PACKAGE_ROOT_FOR_LOADER, "package.json");
+-		const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+-		if (pkg.name === "@zenbujs/core" && pkg.exports) {
+-			coreExportsCache = pkg.exports;
+-			return coreExportsCache;
+-		}
+-	} catch {}
+-	return null;
+-}
+-function resolveCoreSubpath(specifier) {
+-	const exports = getCoreExports();
+-	if (!exports) return null;
+-	const entry = exports[specifier === "@zenbujs/core" ? "." : "./" + specifier.slice(14)];
+-	if (!entry) return null;
+-	const file = typeof entry === "string" ? entry : entry.import ?? entry.default ?? null;
+-	if (!file) return null;
+-	return path.resolve(CORE_PACKAGE_ROOT_FOR_LOADER, file);
+-}
+-function resolve(specifier, context, nextResolve) {
+-	const start = Date.now();
+-	try {
+-		if (specifier === "@zenbu/advice/runtime") return {
+-			url: new URL("../advice-runtime.mjs", import.meta.url).href,
+-			shortCircuit: true
+-		};
+-		if (specifier === "@zenbujs/core" || specifier.startsWith("@zenbujs/core/")) {
+-			const resolved = resolveCoreSubpath(specifier);
+-			if (resolved) return {
+-				url: pathToFileURL(resolved).href,
+-				shortCircuit: true
+-			};
+-		}
+-		if (specifier.startsWith("zenbu:")) return {
+-			url: specifier,
+-			shortCircuit: true
+-		};
+-		return nextResolve(specifier, context);
+-	} finally {
+-		stats.resolveCount++;
+-		stats.resolveMs += Date.now() - start;
+-	}
+-}
+-function loadImpl(url, context, nextLoad) {
+-	if (url.startsWith("zenbu:plugins?")) {
+-		const params = new URL(url).searchParams;
+-		const configPath = decodeURIComponent(params.get("config") ?? "");
+-		const { payload, pluginSourceFiles } = getResolvedConfig(configPath);
+-		const { source, barrelUrls } = buildPluginsRoot(payload);
+-		if (context.hot?.watch) {
+-			context.hot.watch(pathToFileURL(configPath));
+-			for (const file of pluginSourceFiles) context.hot.watch(pathToFileURL(file));
+-		}
+-		if (verbose) console.log(`[zenbu-loader] generated plugin root for ${path.basename(configPath)} (${payload.plugins.length} plugins, ${barrelUrls.length} barrels)`);
+-		return {
+-			format: "module",
+-			source,
+-			shortCircuit: true
+-		};
+-	}
+-	if (url.startsWith("zenbu:registry?")) {
+-		const params = new URL(url).searchParams;
+-		const data = decodeURIComponent(params.get("data") ?? "");
+-		let payload;
+-		try {
+-			payload = JSON.parse(data);
+-		} catch (err) {
+-			throw new Error(`[zenbu-loader] bad registry payload: ${err.message}`);
+-		}
+-		const source = buildRegistryModule(payload);
+-		if (verbose) console.log(`[zenbu-loader] emitted registry module (${payload.plugins.length} plugins, entrypoint=${path.basename(payload.appEntrypoint)})`);
+-		return {
+-			format: "module",
+-			source,
+-			shortCircuit: true
+-		};
+-	}
+-	if (url.startsWith("file://")) {
+-		let filePath;
+-		try {
+-			filePath = fileURLToPath(url);
+-		} catch {
+-			filePath = "";
+-		}
+-		if (filePath) {
+-			const isServiceFile = serviceFileSet.has(filePath);
+-			if (isServiceFile && !fs.existsSync(filePath)) {
+-				serviceFileSet.delete(filePath);
+-				return {
+-					format: "module",
+-					source: "export {}\n",
+-					shortCircuit: true
+-				};
+-			}
+-			if (nativeTsLoader && filePath.endsWith(".ts") && isInsidePluginDir(filePath) && fs.existsSync(filePath)) {
+-				const stripped = loadNativeStrippedTs(filePath);
+-				return isServiceFile ? appendAutoRegister(stripped, filePath) : stripped;
+-			}
+-			if (isServiceFile) {
+-				const downstream = nextLoad(url, context);
+-				if (downstream && typeof downstream.then === "function") return Promise.resolve(downstream).then((r) => appendAutoRegister(r, filePath));
+-				return appendAutoRegister(downstream, filePath);
+-			}
+-		}
+-	}
+-	if (url.startsWith("zenbu:barrel?")) {
+-		const params = new URL(url).searchParams;
+-		const pluginRaw = decodeURIComponent(params.get("plugin") ?? "");
+-		let plugin;
+-		try {
+-			plugin = JSON.parse(pluginRaw);
+-		} catch (err) {
+-			throw new Error(`[zenbu-loader] bad plugin payload: ${err.message}`);
+-		}
+-		const { source, watchPaths } = buildPluginBarrel(plugin);
+-		if (context.hot?.watch) for (const watchPath of watchPaths) context.hot.watch(pathToFileURL(watchPath));
+-		if (verbose) console.log(`[zenbu-loader] generated barrel for plugin ${plugin.name} (${source.split("\n").filter(Boolean).length} imports, ${watchPaths.size} watches)`);
+-		return {
+-			format: "module",
+-			source,
+-			shortCircuit: true
+-		};
+-	}
+-	return nextLoad(url, context);
+-}
+-function load(url, context, nextLoad) {
+-	const start = Date.now();
+-	try {
+-		return loadImpl(url, context, nextLoad);
+-	} finally {
+-		stats.loadCount++;
+-		stats.loadMs += Date.now() - start;
+-	}
+-}
+-//#endregion
+-export { initialize, load, resolve };
++import { stripTypeScriptTypes } from "node:module";
++import fs from "node:fs";
++import path from "node:path";
++import { fileURLToPath, pathToFileURL } from "node:url";
++import { execFileSync } from "node:child_process";
++//#region src/loaders/zenbu.ts
++const verbose = process.env.ZENBU_VERBOSE === "1";
++const nativeTsLoader = process.env.ZENBU_NATIVE_TS_LOADER !== "0";
++const tracePluginImports = process.env.ZENBU_TRACE_PLUGIN_IMPORTS === "1";
++const serialPluginImports = process.env.ZENBU_SERIAL_PLUGIN_IMPORTS === "1";
++const loaderName = "zenbu-loader";
++let tracePort = null;
++const stats = {
++	resolveCount: 0,
++	resolveMs: 0,
++	loadCount: 0,
++	loadMs: 0,
++	nativeStripCount: 0,
++	nativeStripMs: 0,
++	nativeStripMaxMs: 0,
++	nativeStripBytes: 0,
++	nativeStripTop: [],
++	autoRegisterCount: 0,
++	autoRegisterMs: 0
++};
++function resetStats() {
++	stats.resolveCount = 0;
++	stats.resolveMs = 0;
++	stats.loadCount = 0;
++	stats.loadMs = 0;
++	stats.nativeStripCount = 0;
++	stats.nativeStripMs = 0;
++	stats.nativeStripMaxMs = 0;
++	stats.nativeStripBytes = 0;
++	stats.nativeStripTop = [];
++	stats.autoRegisterCount = 0;
++	stats.autoRegisterMs = 0;
++}
++let resolvedPayload = null;
++let resolvedPluginSourceFiles = [];
++/**
++* Set of absolute service file paths derived from the resolved payload.
++* Used by the `file://` branch in `load()` to decide which user files
++* should have `runtime.register(...)` auto-injected. Refreshed alongside
++* `resolvedPayload` whenever the loader picks up a new config snapshot.
++*/
++let serviceFileSet = /* @__PURE__ */ new Set();
++let pluginDirSet = /* @__PURE__ */ new Set();
++/**
++* Number of times we've materialized the plugin root since boot.
++*/
++let pluginsRootInvocations = 0;
++function initialize(data) {
++	if (data?.payload) {
++		resolvedPayload = data.payload;
++		resolvedPluginSourceFiles = data.pluginSourceFiles ?? [];
++		serviceFileSet = collectServiceFiles(data.payload);
++		pluginDirSet = new Set(data.payload.plugins.map((p) => p.dir));
++	}
++	if (data?.tracePort) {
++		tracePort = data.tracePort;
++		tracePort.on("message", (msg) => {
++			if (msg !== "flush") return;
++			try {
++				tracePort?.postMessage({
++					name: loaderName,
++					...stats
++				});
++			} catch {}
++			resetStats();
++		});
++		tracePort.unref?.();
++	}
++}
++function globRegex(filePattern) {
++	return new RegExp(`^${filePattern.replace(/\./g, "\\.").replace(/\*/g, ".*")}$`);
++}
++function expandGlob(pattern) {
++	const dir = path.dirname(pattern);
++	const regex = globRegex(path.basename(pattern));
++	if (!fs.existsSync(dir)) return [];
++	return fs.readdirSync(dir).filter((file) => regex.test(file)).map((file) => path.resolve(dir, file));
++}
++function buildSource(imports) {
++	return imports.map((specifier) => `import ${JSON.stringify(specifier)}\n`).join("");
++}
++function buildTracedImportSource(imports, labelPrefix) {
++	return [
++		'import { bootTrace as __zenbu_bootTrace__ } from "@zenbujs/core/boot-trace"',
++		`const __zenbu_imports__ = ${JSON.stringify(imports)}`,
++		"const __zenbu_label__ = (specifier) => {",
++		"  try {",
++		"    const url = new URL(specifier);",
++		"    if (url.protocol === 'file:') return decodeURIComponent(url.pathname).replace(/\\\\/g, '/').split('/').slice(-5).join('/');",
++		"  } catch {}",
++		"  return specifier;",
++		"}",
++		`await Promise.all(__zenbu_imports__.map((specifier) => __zenbu_bootTrace__.span(${JSON.stringify(labelPrefix)} + ":" + __zenbu_label__(specifier), () => import(specifier))))`
++	].join("\n") + "\n";
++}
++function buildDynamicImportSource(imports) {
++  if (imports.length === 0) return "";
++  return `await Promise.all(${JSON.stringify(imports)}.map((specifier) => import(specifier)))\n`;
++}
++function buildImportSource(imports, labelPrefix) {
++  if (tracePluginImports) return buildTracedImportSource(imports, labelPrefix);
++  if (serialPluginImports) return buildSource(imports);
++  return buildDynamicImportSource(imports);
++}
++/**
++* Matches a service class declaration after dynohot has stripped `export` and
++* minified the source, so it can't require `export`. (`zen link` runs on
++* pre-dynohot source and keeps the `export` requirement separately.)
++*/
++const SERVICE_CLASS_RE = /\bclass\s+(\w+)\s+extends\s+Service\.create\s*\(/g;
++/** Decode the loader's `source` payload (string/Buffer/ArrayBuffer/TypedArray) to UTF-8. */
++function decodeSource(source) {
++	if (typeof source === "string") return source;
++	if (source instanceof Uint8Array) return Buffer.from(source).toString("utf8");
++	if (source instanceof ArrayBuffer) return Buffer.from(source).toString("utf8");
++	return String(source);
++}
++/**
++* Tail-append `runtime.register(<Class>, import.meta)` so service files don't
++* carry the boilerplate. Idempotent if `runtime.register(` is already present;
++* errors on multiple classes since HMR allows one service per import.meta.
++*/
++function appendAutoRegister(downstream, filePath) {
++	const start = Date.now();
++	try {
++		if (!downstream || typeof downstream !== "object") return downstream;
++		const result = downstream;
++		if (result.format !== "module") return downstream;
++		if (result.source == null) return downstream;
++		const source = decodeSource(result.source);
++		if (/\bruntime\s*\.\s*register\s*\(/.test(source)) return {
++			...result,
++			source
++		};
++		SERVICE_CLASS_RE.lastIndex = 0;
++		const matches = [...source.matchAll(SERVICE_CLASS_RE)];
++		if (matches.length === 0) return {
++			...result,
++			source
++		};
++		if (matches.length > 1) {
++			const names = matches.map((m) => m[1]).join(", ");
++			throw new Error(`[zenbu-loader] auto-register: ${matches.length} service classes (${names}) in ${filePath}.\n         The HMR model is one service per file; split into separate files.`);
++		}
++		const tail = `\n;import { runtime as __zenbu_runtime__ } from "@zenbujs/core/runtime";\n__zenbu_runtime__.register(${matches[0][1]}, import.meta);\n`;
++		return {
++			...result,
++			source: source + tail
++		};
++	} finally {
++		stats.autoRegisterCount++;
++		stats.autoRegisterMs += Date.now() - start;
++	}
++}
++/**
++* Expand each plugin's `services` glob list into a flat set of absolute
++* file paths. Consulted by the `file://` branch in `load()` to decide
++* whether to auto-inject `runtime.register(...)` for the loaded module.
++*
++* Glob expansion uses the same `expandGlob` (and therefore the same
++* `fs.readdirSync` snapshot) that `buildPluginBarrel` uses, so the set
++* stays in lockstep with what the barrel actually imports.
++*/
++function collectServiceFiles(payload) {
++	const set = /* @__PURE__ */ new Set();
++	for (const plugin of payload.plugins) for (const entry of plugin.services) {
++		const resolved = path.isAbsolute(entry) ? entry : path.resolve(plugin.dir, entry);
++		if (resolved.includes("*")) for (const f of expandGlob(resolved)) set.add(f);
++		else set.add(resolved);
++	}
++	return set;
++}
++function isInsidePluginDir(filePath) {
++	const normalized = path.resolve(filePath);
++	for (const dir of pluginDirSet) {
++		const root = path.resolve(dir);
++		if (normalized === root || normalized.startsWith(root + path.sep)) return true;
++	}
++	return false;
++}
++function stripTypeScriptTypesQuietly(source, options) {
++	const emitWarning = process.emitWarning.bind(process);
++	process.emitWarning = (warning, ...args) => {
++		const message = typeof warning === "string" ? warning : warning?.message;
++		const type = typeof args[0] === "string" ? args[0] : args[0]?.type;
++		if (type === "ExperimentalWarning" && message?.startsWith("stripTypeScriptTypes is an experimental feature")) return;
++		return emitWarning(warning, ...args);
++	};
++	try {
++		return stripTypeScriptTypes(source, options);
++	} finally {
++		process.emitWarning = emitWarning;
++	}
++}
++function loadNativeStrippedTs(filePath) {
++	const start = Date.now();
++	const source = fs.readFileSync(filePath, "utf8");
++	const stripped = stripTypeScriptTypesQuietly(source, {
++		mode: "transform",
++		sourceMap: false
++	});
++	const elapsed = Date.now() - start;
++	const bytes = Buffer.byteLength(source, "utf8");
++	stats.nativeStripCount++;
++	stats.nativeStripMs += elapsed;
++	stats.nativeStripBytes += bytes;
++	stats.nativeStripMaxMs = Math.max(stats.nativeStripMaxMs, elapsed);
++	stats.nativeStripTop.push({
++		file: filePath,
++		ms: elapsed,
++		bytes
++	});
++	stats.nativeStripTop.sort((a, b) => b.ms - a.ms);
++	if (stats.nativeStripTop.length > 10) stats.nativeStripTop.length = 10;
++	return {
++		format: "module",
++		source: stripped,
++		shortCircuit: true
++	};
++}
++/**
++* Re-resolve the config in a subprocess. We can't `import()` it from inside
++* `load()`: Node serializes load hooks, so a dynamic import re-enters the
++* loader chain and deadlocks.
++*/
++function resolveConfigViaSubprocess(projectDir) {
++	const here = path.dirname(fileURLToPath(import.meta.url));
++	const candidates = [path.resolve(here, "..", "cli", "resolve-config.mjs"), path.resolve(here, "..", "..", "dist", "cli", "resolve-config.mjs")];
++	const resolverScript = candidates.find((c) => fs.existsSync(c));
++	if (!resolverScript) throw new Error(`[zenbu-loader] resolve-config.mjs not found (looked in: ${candidates.join(", ")})`);
++	const env = {
++		...process.env,
++		ELECTRON_RUN_AS_NODE: "1"
++	};
++	const out = execFileSync(process.execPath, [resolverScript, projectDir], {
++		encoding: "utf8",
++		timeout: 1e3,
++		env,
++		stdio: [
++			"ignore",
++			"pipe",
++			"inherit"
++		]
++	});
++	return JSON.parse(out);
++}
++function getResolvedConfig(configPath) {
++	if (pluginsRootInvocations === 0) {
++		pluginsRootInvocations += 1;
++		if (!resolvedPayload) throw new Error("[zenbu-loader] zenbu config not resolved before loader registration. setup-gate must pass it via register(specifier, { data: { payload, pluginSourceFiles } }).");
++		return {
++			payload: resolvedPayload,
++			pluginSourceFiles: resolvedPluginSourceFiles
++		};
++	}
++	pluginsRootInvocations += 1;
++	const fresh = resolveConfigViaSubprocess(path.dirname(configPath));
++	resolvedPayload = fresh.payload;
++	resolvedPluginSourceFiles = fresh.pluginSourceFiles;
++	serviceFileSet = collectServiceFiles(fresh.payload);
++	pluginDirSet = new Set(fresh.payload.plugins.map((p) => p.dir));
++	return fresh;
++}
++/**
++* Generate the top-level plugins barrel. The first import is the registry
++* setup module; ESM evaluates left-to-right in import order, so by the time
++* the plugin barrels start importing service files, `replacePlugins(...)` and
++* `registerAppEntrypoint(...)` have already populated the runtime registry.
++*/
++function buildPluginsRoot(payload) {
++	const registryUrl = `zenbu:registry?data=${encodeURIComponent(JSON.stringify(payload))}`;
++	const barrelUrls = payload.plugins.map((p) => `zenbu:barrel?plugin=${encodeURIComponent(JSON.stringify(p))}`);
++  const source = `${buildSource([registryUrl])}${buildImportSource(barrelUrls, "import-plugin-barrel")}import.meta.hot?.accept()\n`;
++	return {
++		source,
++		barrelUrls
++	};
++}
++/**
++* Generate the registry-setup module body. Side-effect only — no exports.
++* Imported FIRST by the plugins root so its `replacePlugins` /
++* `registerAppEntrypoint` calls run before any plugin's service files
++* evaluate.
++*/
++function buildRegistryModule(payload) {
++	return [
++		"import { replacePlugins, registerAppEntrypoint } from \"@zenbujs/core/runtime\"",
++		`replacePlugins(${JSON.stringify(payload.plugins)})`,
++		`registerAppEntrypoint(${JSON.stringify(payload.appEntrypoint)}, ${JSON.stringify(payload.splashPath)})`,
++		"import.meta.hot?.accept()"
++	].join("\n") + "\n";
++}
++/**
++* Generate a per-plugin barrel: just service-file imports anchored at the
++* plugin's `dir`. Glob-form entries get expanded via `fs.readdirSync` and
++* glob directories are registered with `context.hot.watch()` so dynohot
++* reloads the generated barrel when service files are added/removed.
++*/
++function buildPluginBarrel(plugin) {
++	const imports = [];
++	const watchPaths = new Set([plugin.dir]);
++	for (const entry of plugin.services) {
++		const resolved = path.isAbsolute(entry) ? entry : path.resolve(plugin.dir, entry);
++		if (resolved.includes("*")) {
++			const dir = path.dirname(resolved);
++			watchPaths.add(dir);
++			for (const file of expandGlob(resolved)) {
++				imports.push(pathToFileURL(file).href);
++				serviceFileSet.add(file);
++			}
++		} else {
++			imports.push(pathToFileURL(resolved).href);
++			serviceFileSet.add(resolved);
++		}
++	}
++  const source = `${buildImportSource(imports, `import-service:${plugin.name}`)}import.meta.hot?.accept()\n`;
++	return {
++		source,
++		watchPaths
++	};
++}
++const CORE_PACKAGE_ROOT_FOR_LOADER = (() => {
++	const here = path.dirname(fileURLToPath(import.meta.url));
++	let dir = path.resolve(here, "..", "..");
++	while (dir !== path.dirname(dir)) {
++		const pkg = path.join(dir, "package.json");
++		if (fs.existsSync(pkg)) try {
++			if (JSON.parse(fs.readFileSync(pkg, "utf8")).name === "@zenbujs/core") return dir;
++		} catch {}
++		dir = path.dirname(dir);
++	}
++	return path.resolve(here, "..", "..");
++})();
++let coreExportsCache = null;
++function getCoreExports() {
++	if (coreExportsCache) return coreExportsCache;
++	try {
++		const pkgPath = path.join(CORE_PACKAGE_ROOT_FOR_LOADER, "package.json");
++		const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
++		if (pkg.name === "@zenbujs/core" && pkg.exports) {
++			coreExportsCache = pkg.exports;
++			return coreExportsCache;
++		}
++	} catch {}
++	return null;
++}
++function resolveCoreSubpath(specifier) {
++	const exports = getCoreExports();
++	if (!exports) return null;
++	const entry = exports[specifier === "@zenbujs/core" ? "." : "./" + specifier.slice(14)];
++	if (!entry) return null;
++	const file = typeof entry === "string" ? entry : entry.import ?? entry.default ?? null;
++	if (!file) return null;
++	return path.resolve(CORE_PACKAGE_ROOT_FOR_LOADER, file);
++}
++function resolve(specifier, context, nextResolve) {
++	const start = Date.now();
++	try {
++		if (specifier === "@zenbu/advice/runtime") return {
++			url: new URL("../advice-runtime.mjs", import.meta.url).href,
++			shortCircuit: true
++		};
++		if (specifier === "@zenbujs/core" || specifier.startsWith("@zenbujs/core/")) {
++			const resolved = resolveCoreSubpath(specifier);
++			if (resolved) return {
++				url: pathToFileURL(resolved).href,
++				shortCircuit: true
++			};
++		}
++		if (specifier.startsWith("zenbu:")) return {
++			url: specifier,
++			shortCircuit: true
++		};
++		return nextResolve(specifier, context);
++	} finally {
++		stats.resolveCount++;
++		stats.resolveMs += Date.now() - start;
++	}
++}
++function loadImpl(url, context, nextLoad) {
++	if (url.startsWith("zenbu:plugins?")) {
++		const params = new URL(url).searchParams;
++		const configPath = decodeURIComponent(params.get("config") ?? "");
++		const { payload, pluginSourceFiles } = getResolvedConfig(configPath);
++		const { source, barrelUrls } = buildPluginsRoot(payload);
++		if (context.hot?.watch) {
++			context.hot.watch(pathToFileURL(configPath));
++			for (const file of pluginSourceFiles) context.hot.watch(pathToFileURL(file));
++		}
++		if (verbose) console.log(`[zenbu-loader] generated plugin root for ${path.basename(configPath)} (${payload.plugins.length} plugins, ${barrelUrls.length} barrels)`);
++		return {
++			format: "module",
++			source,
++			shortCircuit: true
++		};
++	}
++	if (url.startsWith("zenbu:registry?")) {
++		const params = new URL(url).searchParams;
++		const data = decodeURIComponent(params.get("data") ?? "");
++		let payload;
++		try {
++			payload = JSON.parse(data);
++		} catch (err) {
++			throw new Error(`[zenbu-loader] bad registry payload: ${err.message}`);
++		}
++		const source = buildRegistryModule(payload);
++		if (verbose) console.log(`[zenbu-loader] emitted registry module (${payload.plugins.length} plugins, entrypoint=${path.basename(payload.appEntrypoint)})`);
++		return {
++			format: "module",
++			source,
++			shortCircuit: true
++		};
++	}
++	if (url.startsWith("file://")) {
++		let filePath;
++		try {
++			filePath = fileURLToPath(url);
++		} catch {
++			filePath = "";
++		}
++		if (filePath) {
++			const isServiceFile = serviceFileSet.has(filePath);
++			if (isServiceFile && !fs.existsSync(filePath)) {
++				serviceFileSet.delete(filePath);
++				return {
++					format: "module",
++					source: "export {}\n",
++					shortCircuit: true
++				};
++			}
++			if (nativeTsLoader && filePath.endsWith(".ts") && isInsidePluginDir(filePath) && fs.existsSync(filePath)) {
++				const stripped = loadNativeStrippedTs(filePath);
++				return isServiceFile ? appendAutoRegister(stripped, filePath) : stripped;
++			}
++			if (isServiceFile) {
++				const downstream = nextLoad(url, context);
++				if (downstream && typeof downstream.then === "function") return Promise.resolve(downstream).then((r) => appendAutoRegister(r, filePath));
++				return appendAutoRegister(downstream, filePath);
++			}
++		}
++	}
++	if (url.startsWith("zenbu:barrel?")) {
++		const params = new URL(url).searchParams;
++		const pluginRaw = decodeURIComponent(params.get("plugin") ?? "");
++		let plugin;
++		try {
++			plugin = JSON.parse(pluginRaw);
++		} catch (err) {
++			throw new Error(`[zenbu-loader] bad plugin payload: ${err.message}`);
++		}
++		const { source, watchPaths } = buildPluginBarrel(plugin);
++		if (context.hot?.watch) for (const watchPath of watchPaths) context.hot.watch(pathToFileURL(watchPath));
++		if (verbose) console.log(`[zenbu-loader] generated barrel for plugin ${plugin.name} (${source.split("\n").filter(Boolean).length} imports, ${watchPaths.size} watches)`);
++		return {
++			format: "module",
++			source,
++			shortCircuit: true
++		};
++	}
++	return nextLoad(url, context);
++}
++function load(url, context, nextLoad) {
++	const start = Date.now();
++	try {
++		return loadImpl(url, context, nextLoad);
++	} finally {
++		stats.loadCount++;
++		stats.loadMs += Date.now() - start;
++	}
++}
++//#endregion
++export { initialize, load, resolve };
+diff --git a/dist/react.mjs b/dist/react.mjs
+index 815f724..904c51f 100644
+--- a/dist/react.mjs
++++ b/dist/react.mjs
+@@ -1,6 +1,6 @@
+ import { i as dbStringify, r as dbParse, t as connectReplica } from "./transport-734CJ5o5.mjs";
+ import { t as connectRpc } from "./src-lK4cnHnv.mjs";
+-import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
++import { Suspense, createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+ //#region ../kyju/src/v2/react/index.ts
+ function createKyjuReact() {
+ 	const KyjuContext = createContext(null);
+@@ -620,7 +620,7 @@ function View({ name, args, visible = true, style, className, fallback = null })
+ 		className,
+ 		style: wrapperStyle,
+ 		"data-zenbu-view": name
+-	}, createElement(ViewArgsContext.Provider, { value: args ?? {} }, createElement(ComponentImpl, { args: args ?? {} })));
++	}, createElement(Suspense, { fallback }, createElement(ViewArgsContext.Provider, { value: args ?? {} }, createElement(ComponentImpl, { args: args ?? {} }))));
+ }
+ /**
+ * Read the current `args` passed to the enclosing `<View>` injection.
+diff --git a/dist/setup-gate.mjs b/dist/setup-gate.mjs
+index 30ee91b..1c2106d 100644
+--- a/dist/setup-gate.mjs
++++ b/dist/setup-gate.mjs
+@@ -6,6 +6,7 @@ import fs from "node:fs";
+ import os from "node:os";
+ import path from "node:path";
+ import { pathToFileURL } from "node:url";
++import { MessageChannel } from "node:worker_threads";
+ import { register as register$1 } from "tsx/esm/api";
+ //#region src/setup-gate.ts
+ function registerLoader(specifier, opts) {
+@@ -76,9 +77,90 @@ function loadElectronApp() {
+ 	if (!electron.app) throw new Error("Electron app API is unavailable; setup-gate must run inside Electron");
+ 	return electron.app;
+ }
++const DISPOSABLE_CHROMIUM_CACHE_DIRS = [
++	"Cache",
++	"Code Cache",
++	"DawnGraphiteCache",
++	"DawnWebGPUCache",
++	"GPUCache",
++	"GrShaderCache",
++	"ShaderCache"
++];
++async function repairDisposableChromiumCaches(app) {
++	if (process.env.ZENBU_SKIP_CACHE_REPAIR === "1") return;
++	try {
++		const userData = app.getPath("userData");
++		const root = path.resolve(userData);
++		await Promise.all(DISPOSABLE_CHROMIUM_CACHE_DIRS.map(async (name) => {
++			const target = path.resolve(root, name);
++			if (target !== root && !target.startsWith(root + path.sep)) return;
++			await fs.promises.rm(target, { recursive: true, force: true });
++		}));
++		const electron = createRequire(import.meta.url)("electron");
++		await electron.session?.defaultSession?.clearCache?.();
++	} catch (err) {
++		console.warn("[setup-gate] Chromium cache repair failed:", err);
++	}
++}
+ async function closeRegisteredWatchers() {
+ 	await (await import("@zenbujs/hmr/pause")).closeAllWatchers?.();
+ }
++const DEFAULT_SETUP_SHUTDOWN_TIMEOUT_MS = 8e3;
++function readSetupShutdownTimeoutMs() {
++	const raw = process.env.ZENBU_SETUP_SHUTDOWN_TIMEOUT_MS;
++	if (!raw) return DEFAULT_SETUP_SHUTDOWN_TIMEOUT_MS;
++	const value = Number(raw);
++	return Number.isFinite(value) && value > 0 ? value : DEFAULT_SETUP_SHUTDOWN_TIMEOUT_MS;
++}
++async function withShutdownTimeout(label, work, timeoutMs) {
++	let timer = null;
++	const guarded = Promise.resolve(work).catch((err) => {
++		console.error(`[setup-gate] ${label} failed:`, err);
++	});
++	const timeout = new Promise((resolve) => {
++		timer = setTimeout(() => {
++			console.error(`[setup-gate] ${label} timed out after ${timeoutMs}ms; forcing exit`);
++      bootTrace.mark("shutdown-timeout", { label, timeoutMs });
++			resolve();
++		}, timeoutMs);
++	});
++	await Promise.race([guarded, timeout]);
++	if (timer) clearTimeout(timer);
++}
++function scheduleAppQuit(app, label, delayMs) {
++  bootTrace.mark(`auto-quit:${label}:scheduled`, { delayMs });
++  return setTimeout(() => {
++    console.log(`[setup-gate] auto-quit ${label} firing after ${delayMs}ms`);
++    bootTrace.mark(`auto-quit:${label}:fire`, { delayMs });
++    app.quit();
++  }, delayMs);
++}
++function createLoaderStatsBridge() {
++	if (!bootTrace.isEnabled()) return null;
++	const { port1, port2 } = new MessageChannel();
++	port1.unref?.();
++	return {
++		mainPort: port1,
++		loaderPort: port2
++	};
++}
++async function flushLoaderStats(bridge, label) {
++	if (!bridge) return null;
++	return await new Promise((resolve) => {
++		let settled = false;
++		const done = (stats) => {
++			if (settled) return;
++			settled = true;
++			clearTimeout(timer);
++			if (stats) bootTrace.mark(`loader-stats:${label}`, stats);
++			resolve(stats ?? null);
++		};
++		const timer = setTimeout(() => done(null), 250);
++		timer.unref?.();
++		bridge.mainPort.once("message", done);
++		bridge.mainPort.postMessage("flush");
++	});
++}
+ /**
+ * Extract the splash's intended background color from `<meta name="zenbu-bg">`
+ * tag(s). Used as the BaseWindow's `backgroundColor` so the OS doesn't
+@@ -198,13 +280,17 @@ async function loadConfigPhase(tsconfig, projectRoot) {
+ 	});
+ 	const { loadConfig } = await bootTrace.span("import:cli/lib/load-config", () => import("./load-config-D4IRhbYq.mjs").then((n) => n.a));
+ 	const { resolved, pluginSourceFiles } = await bootTrace.span("loadConfig", () => loadConfig(projectRoot));
+-	try {
+-		await bootTrace.span("linkProject", async () => {
+-			const { linkProject } = await import("./link-B87yAH_G.mjs").then((n) => n.n);
+-			await linkProject(projectRoot, { quiet: true });
+-		});
+-	} catch (err) {
+-		console.warn(`[setup-gate] zen link failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
++	if (process.env.ZENBU_LINK_ON_BOOT === "1") {
++		try {
++			await bootTrace.span("linkProject", async () => {
++				const { linkProject } = await import("./link-B87yAH_G.mjs").then((n) => n.n);
++				await linkProject(projectRoot, { quiet: true });
++			});
++		} catch (err) {
++			console.warn(`[setup-gate] zen link failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
++		}
++	} else {
++		bootTrace.mark("linkProject:skipped");
+ 	}
+ 	const loaderData = {
+ 		payload: {
+@@ -237,17 +323,28 @@ async function loadConfigPhase(tsconfig, projectRoot) {
+ * `register()`'s `data` argument.
+ */
+ async function registerLoadersPhase(projectRoot, loaderData) {
++	const loaderStats = createLoaderStatsBridge();
+ 	bootTrace.spanSync("register-zenbu-loader", () => {
+-		registerLoader(import.meta.resolve("@zenbujs/core/loaders/zenbu"), { data: loaderData });
++		const data = loaderStats ? {
++			...loaderData,
++			tracePort: loaderStats.loaderPort
++		} : loaderData;
++		const options = loaderStats ? { data, transferList: [loaderStats.loaderPort] } : { data };
++		registerLoader(import.meta.resolve("@zenbujs/core/loaders/zenbu"), options);
+ 	});
+ 	process.env.ZENBU_ADVICE_ROOT = projectRoot;
+ 	if (process.env.ZENBU_ENABLE_MAIN_ADVICE === "1") await bootTrace.span("register-advice", () => import("./node-CVFl4lap.mjs"));
+ 	else bootTrace.mark("register-advice:skipped");
++	if (process.env.ZENBU_DISABLE_DYNOHOT === "1") {
++		bootTrace.mark("register-dynohot:skipped", { reason: "ZENBU_DISABLE_DYNOHOT=1" });
++		return loaderStats;
++	}
+ 	const dynohotRegisterPath = createRequire(import.meta.url).resolve("@zenbujs/hmr/register");
+ 	const dynohot = await bootTrace.span("import-dynohot", () => import(pathToFileURL(dynohotRegisterPath).href));
+ 	if (typeof dynohot.register === "function") bootTrace.spanSync("register-dynohot", () => {
+ 		dynohot.register({ ignore: /[/\\](?:node_modules|dist)[/\\]/ });
+ 	});
++	return loaderStats;
+ }
+ async function setupGate() {
+ 	const t0 = Date.now();
+@@ -272,28 +369,37 @@ async function setupGate() {
+ 	globalThis.__zenbu_vite_prewarm__ = vitePrewarm;
+ 	const app = loadElectronApp();
+ 	await app.whenReady();
++	await repairDisposableChromiumCaches(app);
++	bootTrace.mark("chromium-cache-repaired");
+ 	bootTrace.mark("electron-ready");
+ 	step("electron ready");
+ 	bootstrapEnv();
+ 	let shuttingDown = false;
++	let electronExitRequested = false;
+ 	const shutdown = async (exitCode = 0) => {
+ 		if (shuttingDown) return;
+ 		shuttingDown = true;
+-		try {
+-			await globalThis.__zenbu_service_runtime__?.shutdown();
+-		} catch (err) {
+-			console.error("[setup-gate] shutdown failed:", err);
+-		}
+-		try {
+-			await closeRegisteredWatchers();
+-		} catch (err) {
+-			console.error("[setup-gate] closeAllWatchers failed:", err);
+-		}
+-		process.exit(exitCode);
++		globalThis.__zenbu_shutting_down__ = true;
++    console.log(`[setup-gate] shutdown start (exitCode=${exitCode})`);
++    bootTrace.mark("shutdown:start", { exitCode });
++		globalThis.__zenbu_exiting_process__ = true;
++		const shutdownTimeoutMs = readSetupShutdownTimeoutMs();
++		await withShutdownTimeout("service runtime shutdown", globalThis.__zenbu_service_runtime__?.shutdown(), shutdownTimeoutMs);
++		await withShutdownTimeout("closeAllWatchers", closeRegisteredWatchers(), shutdownTimeoutMs);
++		electronExitRequested = true;
++    bootTrace.mark("shutdown:exit-requested", { exitCode });
++    bootTrace.flush({ reason: "shutdown" });
++    setTimeout(() => {
++      console.error("[setup-gate] app.exit did not terminate within 3000ms; forcing process.exit");
++      process.exit(exitCode);
++    }, 3e3);
++		app.exit(exitCode);
+ 	};
+ 	app.on("before-quit", (event) => {
++		if (electronExitRequested) return;
+ 		event.preventDefault();
+-		shutdown(0);
++    bootTrace.mark("shutdown:before-quit");
++		void shutdown(0);
+ 	});
+ 	/**
+ 	* i think we probably want to expose this in an editable form to the user
+@@ -304,7 +410,7 @@ async function setupGate() {
+ 	const autoQuitReadyMs = envMs("ZENBU_AUTO_QUIT_AFTER_READY_MS");
+ 	if (autoQuitReadyMs != null) {
+ 		if (verbose) console.log("[setup-gate] auto-quit after ready scheduled:", autoQuitReadyMs);
+-		setTimeout(() => app.quit(), autoQuitReadyMs).unref();
++    scheduleAppQuit(app, "after-ready", autoQuitReadyMs);
+ 	}
+ 	const bundledAppPath = app.getAppPath();
+ 	const appName = readPackageJson(bundledAppPath).name ?? path.basename(bundledAppPath);
+@@ -339,8 +445,9 @@ async function setupGate() {
+ 	}
+ 	if (shuttingDown) return;
+ 	step(loaderData.payload.splashPath ? "splash shown" : "splash skipped");
++	let loaderStats = null;
+ 	try {
+-		await bootTrace.span("register-loaders-phase", () => registerLoadersPhase(projectRoot, loaderData));
++		loaderStats = await bootTrace.span("register-loaders-phase", () => registerLoadersPhase(projectRoot, loaderData));
+ 	} catch (err) {
+ 		if (shuttingDown) return;
+ 		throw err;
+@@ -376,6 +483,7 @@ async function setupGate() {
+ 		if (shuttingDown) return;
+ 		throw err;
+ 	}
++	await flushLoaderStats(loaderStats, "plugins-evaluated");
+ 	if (shuttingDown) return;
+ 	if (isPluginModule(mod)) {
+ 		const controller = mod.default();
+@@ -387,7 +495,9 @@ async function setupGate() {
+ 	await bootTrace.span("runtime-when-idle", async () => {
+ 		await runtime?.whenIdle();
+ 	});
++	await flushLoaderStats(loaderStats, "ready");
+ 	step("ready");
++	bootTrace.flush({ reason: "ready" });
+ 	setTimeout(() => {
+ 		bootTrace.flush({ reason: "ready" });
+ 	}, 1500).unref();
+@@ -397,7 +507,7 @@ async function setupGate() {
+ 	const autoQuitMs = envMs("ZENBU_AUTO_QUIT_AFTER_IDLE_MS");
+ 	if (autoQuitMs != null) {
+ 		if (verbose) console.log("[setup-gate] auto-quit scheduled:", autoQuitMs);
+-		setTimeout(() => app.quit(), autoQuitMs).unref();
++    scheduleAppQuit(app, "after-idle", autoQuitMs);
+ 	}
+ }
+ setupGate().catch((error) => {
+diff --git a/dist/updater-5PTpBkRg.mjs b/dist/updater-5PTpBkRg.mjs
+index a6db51f..33f58fd 100644
+--- a/dist/updater-5PTpBkRg.mjs
++++ b/dist/updater-5PTpBkRg.mjs
+@@ -40,7 +40,8 @@ function isYarnBerry(version) {
+ 	return Number.isFinite(major) && major >= 2;
+ }
+ function bundledToolPath(name, resourcesPath) {
+-	const candidates = [path.join(resourcesPath, "toolchain", "bin", name), path.join(resourcesPath, "toolchain", name)];
++	const names = process.platform === "win32" ? [`${name}.exe`, name] : [name];
++	const candidates = names.flatMap((candidateName) => [path.join(resourcesPath, "toolchain", "bin", candidateName), path.join(resourcesPath, "toolchain", candidateName)]);
+ 	for (const candidate of candidates) if (existsSync(candidate)) return candidate;
+ 	return null;
+ }
+@@ -112,9 +113,14 @@ function buildInstallEnv(appsDir, resourcesPath) {
+ 	segments.push(...systemDirs);
+ 	const seen = /* @__PURE__ */ new Set();
+ 	const PATH = segments.filter((s) => s && !seen.has(s) && seen.add(s)).join(sep);
++	const isolatedNpmUserConfig = process.platform === "win32" ? path.join(appsDir, ".zenbu", ".npmrc") : null;
+ 	return {
+ 		...process.env,
+ 		PATH,
++		...(isolatedNpmUserConfig ? {
++			npm_config_userconfig: isolatedNpmUserConfig,
++			NPM_CONFIG_USERCONFIG: isolatedNpmUserConfig
++		} : {}),
+ 		Path: PATH,
+ 		CI: "true",
+ 		HOME: path.join(appsDir, ".zenbu", ".node-gyp"),
+@@ -185,10 +191,10 @@ async function runInstall(opts) {
+ 	switch (pm.type) {
+ 		case "pnpm": {
+ 			if (entry.kind !== "js") throw new Error("internal: pnpm entry shape");
+-			const bun = bundledToolPath("bun", resourcesPath);
+-			if (!bun) throw new Error(`bundled bun not found in ${resourcesPath}/toolchain (required to host the pnpm.cjs entry)`);
++			const jsRuntime = bundledToolPath("node", resourcesPath) ?? bundledToolPath("bun", resourcesPath);
++			if (!jsRuntime) throw new Error(`bundled node/bun not found in ${resourcesPath}/toolchain (required to host the pnpm.cjs entry)`);
+ 			await spawnInstall({
+-				bin: bun,
++				bin: jsRuntime,
+ 				cliArgs: [
+ 					entry.path,
+ 					"install",
+@@ -205,10 +211,10 @@ async function runInstall(opts) {
+ 		}
+ 		case "npm": {
+ 			if (entry.kind !== "js") throw new Error("internal: npm entry shape");
+-			const bun = bundledToolPath("bun", resourcesPath);
+-			if (!bun) throw new Error(`bundled bun not found in ${resourcesPath}/toolchain (required to host the npm-cli.js entry)`);
++			const jsRuntime = bundledToolPath("node", resourcesPath) ?? bundledToolPath("bun", resourcesPath);
++			if (!jsRuntime) throw new Error(`bundled node/bun not found in ${resourcesPath}/toolchain (required to host the npm-cli.js entry)`);
+ 			await spawnInstall({
+-				bin: bun,
++				bin: jsRuntime,
+ 				cliArgs: [
+ 					entry.path,
+ 					"install",
+@@ -227,10 +233,10 @@ async function runInstall(opts) {
+ 		}
+ 		case "yarn": {
+ 			if (entry.kind !== "js") throw new Error("internal: yarn entry shape");
+-			const bun = bundledToolPath("bun", resourcesPath);
+-			if (!bun) throw new Error(`bundled bun not found in ${resourcesPath}/toolchain (required to host the yarn.js entry)`);
++			const jsRuntime = bundledToolPath("node", resourcesPath) ?? bundledToolPath("bun", resourcesPath);
++			if (!jsRuntime) throw new Error(`bundled node/bun not found in ${resourcesPath}/toolchain (required to host the yarn.js entry)`);
+ 			if (isYarnBerry(pm.version)) await spawnInstall({
+-				bin: bun,
++				bin: jsRuntime,
+ 				cliArgs: [entry.path, "install"],
+ 				cwd: appsDir,
+ 				env: {
+@@ -247,7 +253,7 @@ async function runInstall(opts) {
+ 				await fsp.mkdir(path.dirname(rcPath), { recursive: true });
+ 				await fsp.writeFile(rcPath, "strict-ssl false\n");
+ 				await spawnInstall({
+-					bin: bun,
++					bin: jsRuntime,
+ 					cliArgs: [
+ 						entry.path,
+ 						"install",
+diff --git a/dist/vite-BYLT44ru.mjs b/dist/vite-BYLT44ru.mjs
+index 958e348..cb49e71 100644
+--- a/dist/vite-BYLT44ru.mjs
++++ b/dist/vite-BYLT44ru.mjs
+@@ -213,6 +213,10 @@ var ViteService = class extends Service.create({ key: "vite" }) {
+ 		this.entrypointRoot = root;
+ 		log.verbose(`ready at ${this.url}`);
+ 		this.setup("vite-cleanup", () => async () => {
++			if (globalThis.__zenbu_exiting_process__) {
++				this.viteServer = null;
++				return;
++			}
+ 			const s = this.viteServer;
+ 			this.viteServer = null;
+ 			if (!s) return;
+diff --git a/dist/vite-plugins-C4F04RwC.mjs b/dist/vite-plugins-C4F04RwC.mjs
+index e2eab73..6cbbb78 100644
+--- a/dist/vite-plugins-C4F04RwC.mjs
++++ b/dist/vite-plugins-C4F04RwC.mjs
+@@ -56,6 +56,25 @@ function zenbuAdvicePlugin(options = {}) {
+ 		}
+ 	};
+ }
++const ADVICE_TRANSFORM_ALL = process.env.ZENBU_ADVICE_TRANSFORM_ALL === "1";
++function normalizeAdviceModuleId(value) {
++	return value.replace(/\\/g, "/").replace(/^\.\//, "");
++}
++function shouldRunAdviceTransform(id, root) {
++	if (ADVICE_TRANSFORM_ALL) return true;
++	const targets = /* @__PURE__ */ new Set();
++	for (const entry of getInjections()) {
++		if (entry.meta?.kind !== "advice") continue;
++		const moduleId = entry.meta?.wraps?.moduleId;
++		if (typeof moduleId === "string" && moduleId.trim()) targets.add(normalizeAdviceModuleId(moduleId));
++	}
++	if (targets.size === 0) return false;
++	const cleanId = id.split("?", 1)[0];
++	if (!cleanId || cleanId.includes("\0")) return false;
++	const rel = path.relative(root, cleanId).replace(/\\/g, "/");
++	if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return false;
++	return targets.has(normalizeAdviceModuleId(rel));
++}
+ //#endregion
+ //#region src/vite-plugins.ts
+ const PRELUDE_PREFIX = "/@injections-prelude";
+@@ -100,13 +119,22 @@ function generateInjectionsPreludeCode(entries) {
+ 	if (entries.length === 0) return "if (import.meta.hot) { import.meta.hot.accept() }\n";
+ 	const isBootstrap = (e) => e.meta === void 0 || e.meta?.kind === "bootstrap";
+ 	const isAdvice = (e) => e.meta?.kind === "advice";
++	const lazyComponentKinds = /* @__PURE__ */ new Set(["view", "embed", "bottom-panel", "left-sidebar", "right-sidebar", "workspace-rail", "title-bar", "footer.item"]);
++	const isLazyComponentInjection = (e) => {
++		const kind = e.meta?.kind;
++		return typeof kind === "string" && lazyComponentKinds.has(kind);
++	};
+ 	const hasAdvice = entries.some(isAdvice);
+ 	const hasValue = entries.some((e) => !isBootstrap(e) && !isAdvice(e));
++	const hasLazyComponent = entries.some((e) => !isBootstrap(e) && !isAdvice(e) && isLazyComponentInjection(e));
+ 	const imports = [];
+ 	if (hasAdvice) {
+ 		imports.push("import { replace, unreplace, advise } from \"@zenbu/advice/runtime\"");
+-		imports.push("import { createElement as __zb_createElement } from \"react\"");
+ 	}
++	const reactRuntimeImports = [];
++	if (hasAdvice) reactRuntimeImports.push("createElement as __zb_createElement");
++	if (hasLazyComponent) reactRuntimeImports.push("lazy as __zb_lazy");
++	if (reactRuntimeImports.length > 0) imports.push(`import { ${reactRuntimeImports.join(", ")} } from "react"`);
+ 	const reactImports = ["  beginInjectionBatch as __zb_beginInjectionBatch,", "  endInjectionBatch as __zb_endInjectionBatch,"];
+ 	if (hasValue) reactImports.unshift("  registerInjection as __zb_registerInjection,");
+ 	imports.push(`import {\n${reactImports.join("\n")}\n} from "@zenbujs/core/react"`);
+@@ -121,13 +149,16 @@ function generateInjectionsPreludeCode(entries) {
+ 	let needsAroundWrapper = false;
+ 	entries.forEach((entry, i) => {
+ 		const ns = `__m${i}`;
+-		imports.push(`import * as ${ns} from ${JSON.stringify(entry.modulePath)}`);
+-		setupAliases.push({
+-			alias: ns,
+-			index: i
+-		});
++		const lazyComponent = !isBootstrap(entry) && !isAdvice(entry) && isLazyComponentInjection(entry);
++		if (!lazyComponent) {
++			imports.push(`import * as ${ns} from ${JSON.stringify(entry.modulePath)}`);
++			setupAliases.push({
++				alias: ns,
++				index: i
++			});
++		}
+ 		if (isBootstrap(entry)) return;
+-		const valueExpr = entry.exportName === "default" ? `${ns}.default` : `${ns}.${entry.exportName}`;
++		const valueExpr = lazyComponent ? null : entry.exportName === "default" ? `${ns}.default` : `${ns}.${entry.exportName}`;
+ 		if (isAdvice(entry)) {
+ 			const wraps = entry.meta?.wraps;
+ 			const adviceType = entry.meta?.adviceType;
+@@ -144,6 +175,12 @@ function generateInjectionsPreludeCode(entries) {
+ 			return;
+ 		}
+ 		const metaLiteral = JSON.stringify(entry.meta);
++		if (lazyComponent) {
++			const exportNameLiteral = JSON.stringify(entry.exportName);
++			const lazyExpr = `__zb_lazy(() => import(${JSON.stringify(entry.modulePath)}).then((m) => ({ default: m[${exportNameLiteral}] })))`;
++			calls.push(`__zb_disposers.push(__zb_registerInjection(${JSON.stringify(entry.name)}, ${lazyExpr}, ${metaLiteral}))`);
++			return;
++		}
+ 		calls.push(`__zb_disposers.push(__zb_registerInjection(${JSON.stringify(entry.name)}, ${valueExpr}, ${metaLiteral}))`);
+ 	});
+ 	if (needsAroundWrapper) setup.unshift("const __zb_aroundCache = new WeakMap()", "function __zb_wrapAround(aroundFn) {", "  return function(Original, props) {", "    let perFn = __zb_aroundCache.get(aroundFn)", "    if (!perFn) { perFn = new WeakMap(); __zb_aroundCache.set(aroundFn, perFn) }", "    let Comp = perFn.get(Original)", "    if (!Comp) {", "      Comp = function (p) { return aroundFn(Original, p) }", "      try { Object.defineProperty(Comp, 'name', { value: aroundFn.name || 'AroundAdvice' }) } catch {}", "      perFn.set(Original, Comp)", "    }", "    return __zb_createElement(Comp, props)", "  }", "}");
+@@ -238,10 +275,12 @@ function advicePreludePlugin() {
+ /** Scoped wrapper around `@zenbu/advice/vite`'s babel transform. */
+ function zenbuAdviceTransform() {
+ 	let inner = null;
++	let root = process.cwd();
+ 	return {
+ 		name: "zenbu-advice-scoped",
+ 		enforce: "pre",
+ 		configResolved(config) {
++			root = config.root;
+ 			const escaped = config.root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+ 			inner = zenbuAdvicePlugin({
+ 				root: config.root,
+@@ -251,6 +290,7 @@ function zenbuAdviceTransform() {
+ 			if (typeof hook === "function") hook.call(this, config);
+ 		},
+ 		transform(code, id) {
++			if (!shouldRunAdviceTransform(id, root)) return null;
+ 			const hook = inner?.transform;
+ 			if (typeof hook !== "function") return null;
+ 			return hook.call(this, code, id);
+@@ -285,9 +325,17 @@ function bootReloadGuardPlugin() {
+ }
+ const PLUGIN_SOURCES_EXTS = "{ts,tsx,js,jsx,mts,mjs,cjs}";
+ const PLUGIN_SOURCES_SPECIFIER = "@zenbujs/core/plugin-sources.css";
++const PLUGIN_RENDERER_SOURCE_DIRS = ["src/renderer", "src/views", "src/content", "src/extension"];
+ function pluginSourcesPathFor(root) {
+ 	return path.resolve(root, "node_modules/.zenbu/plugin-sources.css");
+ }
++function pluginSourceDirs(pluginDir) {
++	const found = [];
++	for (const rel of PLUGIN_RENDERER_SOURCE_DIRS) {
++		if (fs.existsSync(path.join(pluginDir, rel))) found.push(rel);
++	}
++	return found.length > 0 ? found : ["src"];
++}
+ function buildPluginSourcesCss() {
+ 	const { plugins } = getConfig();
+ 	const lines = [
+@@ -297,7 +345,7 @@ function buildPluginSourcesCss() {
+ 	];
+ 	for (const plugin of plugins) {
+ 		const dir = plugin.dir.replace(/\\/g, "/");
+-		lines.push(`@source "${dir}/src/**/*.${PLUGIN_SOURCES_EXTS}";`);
++		for (const sourceDir of pluginSourceDirs(plugin.dir)) lines.push(`@source "${dir}/${sourceDir}/**/*.${PLUGIN_SOURCES_EXTS}";`);
+ 	}
+ 	return lines.join("\n") + "\n";
+ }

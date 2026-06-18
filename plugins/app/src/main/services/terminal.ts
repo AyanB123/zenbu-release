@@ -35,6 +35,11 @@ const require = createRequire(import.meta.url)
  * with what was already written. Keep this comfortably bigger than one screen
  * but small enough that we don't hoard memory for backgrounded terminals. */
 const REPLAY_BUFFER_BYTES = 256 * 1024
+const MAX_LIVE_TERMINALS = 20
+
+/** PTY libraries occasionally fail to emit an exit event after kill, especially
+ * during app shutdown. Do not let service disposal wait forever. */
+const PTY_KILL_TIMEOUT_MS = 3000
 
 /** How often we flush pending title changes back to the DB. Many shells emit
  * OSC sequences on every prompt redraw, so we coalesce. */
@@ -103,6 +108,7 @@ export class TerminalService extends Service.create({
     cols?: number
     rows?: number
   }): Promise<{ terminalId: string }> {
+    this.assertTerminalCapacity()
     const terminalId = nanoid()
     const initialTitle = defaultTitle(args.cwd)
     await this.ctx.db.client.update(root => {
@@ -150,7 +156,12 @@ export class TerminalService extends Service.create({
       const rows = Math.max(1, Math.floor(args.rows))
       try {
         entry.pty.resize(cols, rows)
-      } catch {}
+      } catch (err) {
+        console.warn(
+          `[terminal] resize failed during attach for ${entry.id}:`,
+          err instanceof Error ? err.message : err,
+        )
+      }
     }
     // Trim the leading partial line: the rolling buffer is byte-
     // capped, not line-aligned, so its first bytes are typically
@@ -179,7 +190,12 @@ export class TerminalService extends Service.create({
     if (!entry) return
     try {
       entry.pty.write(args.data)
-    } catch {}
+    } catch (err) {
+      console.warn(
+        `[terminal] write failed for ${args.terminalId}:`,
+        err instanceof Error ? err.message : err,
+      )
+    }
   }
 
   async resize(args: { terminalId: string; cols: number; rows: number }) {
@@ -189,7 +205,12 @@ export class TerminalService extends Service.create({
     const rows = Math.max(1, Math.floor(args.rows))
     try {
       entry.pty.resize(cols, rows)
-    } catch {}
+    } catch (err) {
+      console.warn(
+        `[terminal] resize failed for ${args.terminalId}:`,
+        err instanceof Error ? err.message : err,
+      )
+    }
   }
 
   /** Kill the pty and remove the terminal from the DB. We delete the DB
@@ -255,6 +276,7 @@ export class TerminalService extends Service.create({
     currentTitle: string,
     sizing: { cols?: number; rows?: number },
   ): Promise<TerminalEntry> {
+    this.assertTerminalCapacity(terminalId)
     const shell = pickShell()
     // login-shell env so PATH etc. match a real terminal
     const baseEnv = await this.ctx.shellEnv.getEnv()
@@ -325,8 +347,21 @@ export class TerminalService extends Service.create({
         const record = root.app.terminals[entry.id]
         if (!record) return
         record.title = next
-      })
+      }).catch(err =>
+        console.warn(
+          `[terminal] title update failed for ${entry.id}:`,
+          err instanceof Error ? err.message : err,
+        ),
+      )
     }, TITLE_FLUSH_DELAY_MS)
+  }
+
+  private assertTerminalCapacity(existingId?: string): void {
+    if (existingId && this.terminals.has(existingId)) return
+    if (this.terminals.size < MAX_LIVE_TERMINALS) return
+    throw new Error(
+      `Terminal limit reached (${MAX_LIVE_TERMINALS}). Close an existing terminal before opening another.`,
+    )
   }
 
   private async killEntry(entry: TerminalEntry): Promise<void> {
@@ -336,15 +371,23 @@ export class TerminalService extends Service.create({
     }
     return new Promise<void>(resolve => {
       let settled = false
+      let timeout: ReturnType<typeof setTimeout> | null = null
       const done = () => {
         if (settled) return
         settled = true
+        if (timeout) clearTimeout(timeout)
         resolve()
       }
+      timeout = setTimeout(done, PTY_KILL_TIMEOUT_MS)
+      timeout.unref?.()
       try {
         entry.pty.onExit(done)
         entry.pty.kill()
-      } catch {
+      } catch (err) {
+        console.warn(
+          `[terminal] kill failed for ${entry.id}:`,
+          err instanceof Error ? err.message : err,
+        )
         done()
       }
     })
