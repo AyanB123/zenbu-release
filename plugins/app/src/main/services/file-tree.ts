@@ -387,8 +387,8 @@ export class FileTreeService extends Service.create({
         await this.ctx.db.client.app.fileTreeIndexes[scopeId].paths.concat(
           batch,
         )
-        if (trace) {
         this.suppressWatcherSelfWrites(scopeId)
+        if (trace) {
           concatBatches++
           concatItems += batch.length
         }
@@ -401,8 +401,8 @@ export class FileTreeService extends Service.create({
         await this.ctx.db.client.app.fileTreeIndexes[scopeId].paths.concat(
           tail,
         )
-        if (trace) {
         this.suppressWatcherSelfWrites(scopeId)
+        if (trace) {
           concatBatches++
           concatItems += tail.length
         }
